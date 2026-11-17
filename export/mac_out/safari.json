@@ -1,0 +1,538 @@
+{
+  "name": "safari",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+  "url": "http://127.0.0.1:8766/tools/test.html?name=safari",
+  "startedAt": "2026-11-16T17:03:21.241Z",
+  "hasRequestVideoFrameCallback": true,
+  "canPlayType": {
+    "video/quicktime; codecs=\"hvc1\"": "probably",
+    "video/mp4; codecs=\"hvc1\"": "probably"
+  },
+  "segments": [
+    {
+      "label": "intro",
+      "src": "/out/intro.mov?v=1794848601247",
+      "requestedPasses": 1,
+      "videoWidth": 3840,
+      "videoHeight": 2160,
+      "duration": 2.6,
+      "playedToEnd": true,
+      "error": null,
+      "passes": [
+        {
+          "index": 0,
+          "callbackKind": "requestVideoFrameCallback",
+          "frameCallbacks": 129,
+          "firstMediaTime": 0,
+          "lastMediaTime": 2.567,
+          "presentedFrames": 139,
+          "ended": true,
+          "playError": null,
+          "endError": null,
+          "startMs": 81,
+          "endMs": 2721,
+          "playResolvedMs": 82
+        }
+      ],
+      "samples": [
+        {
+          "key": "start",
+          "pass": 0,
+          "atMs": 114,
+          "mediaTime": 0,
+          "currentTime": 0,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "key": "middle",
+          "pass": 0,
+          "atMs": 1449,
+          "mediaTime": 1.3,
+          "currentTime": 1.329,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "nearEnd",
+          "pass": 0,
+          "atMs": 2498,
+          "mediaTime": 2.35,
+          "currentTime": 2.378,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "ended",
+          "pass": 0,
+          "atMs": 2721,
+          "mediaTime": 2.6,
+          "currentTime": 2.6,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        }
+      ],
+      "frameCallbacksTotal": 129,
+      "playbackQuality": {
+        "totalVideoFrames": 1,
+        "droppedVideoFrames": 0
+      }
+    },
+    {
+      "label": "loop",
+      "src": "/out/loop.mov?v=1794848601247",
+      "requestedPasses": 2,
+      "videoWidth": 3840,
+      "videoHeight": 2160,
+      "duration": 2.85,
+      "playedToEnd": true,
+      "error": null,
+      "passes": [
+        {
+          "index": 0,
+          "callbackKind": "requestVideoFrameCallback",
+          "frameCallbacks": 144,
+          "firstMediaTime": 0,
+          "lastMediaTime": 2.817,
+          "presentedFrames": 153,
+          "ended": true,
+          "playError": null,
+          "endError": null,
+          "startMs": 2801,
+          "endMs": 5693,
+          "playResolvedMs": 2801
+        },
+        {
+          "index": 1,
+          "callbackKind": "requestVideoFrameCallback",
+          "frameCallbacks": 152,
+          "firstMediaTime": 2.833,
+          "lastMediaTime": 2.817,
+          "presentedFrames": 310,
+          "ended": true,
+          "playError": null,
+          "endError": null,
+          "startMs": 5732,
+          "endMs": 8644,
+          "playResolvedMs": 5753
+        }
+      ],
+      "samples": [
+        {
+          "key": "start",
+          "pass": 0,
+          "atMs": 2815,
+          "mediaTime": 0,
+          "currentTime": 0.011,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "middle",
+          "pass": 0,
+          "atMs": 4299,
+          "mediaTime": 1.433,
+          "currentTime": 1.459,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "nearEnd",
+          "pass": 0,
+          "atMs": 5415,
+          "mediaTime": 2.567,
+          "currentTime": 2.575,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "ended",
+          "pass": 0,
+          "atMs": 5693,
+          "mediaTime": 2.85,
+          "currentTime": 2.85,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "start+middle+nearEnd",
+          "pass": 1,
+          "atMs": 5753,
+          "mediaTime": 2.833,
+          "currentTime": 0,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "ended",
+          "pass": 1,
+          "atMs": 8644,
+          "mediaTime": 2.85,
+          "currentTime": 2.85,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        }
+      ],
+      "frameCallbacksTotal": 296,
+      "playbackQuality": {
+        "totalVideoFrames": 342,
+        "droppedVideoFrames": 0
+      }
+    },
+    {
+      "label": "outro",
+      "src": "/out/outro.mov?v=1794848601247",
+      "requestedPasses": 1,
+      "videoWidth": 3840,
+      "videoHeight": 2160,
+      "duration": 0.617,
+      "playedToEnd": true,
+      "error": null,
+      "passes": [
+        {
+          "index": 0,
+          "callbackKind": "requestVideoFrameCallback",
+          "frameCallbacks": 31,
+          "firstMediaTime": 0,
+          "lastMediaTime": 0.567,
+          "presentedFrames": 33,
+          "ended": true,
+          "playError": null,
+          "endError": null,
+          "startMs": 8718,
+          "endMs": 9392,
+          "playResolvedMs": 8718
+        }
+      ],
+      "samples": [
+        {
+          "key": "start",
+          "pass": 0,
+          "atMs": 8732,
+          "mediaTime": 0,
+          "currentTime": 0.011,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "middle",
+          "pass": 0,
+          "atMs": 9082,
+          "mediaTime": 0.317,
+          "currentTime": 0.325,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            253
+          ]
+        },
+        {
+          "key": "nearEnd",
+          "pass": 0,
+          "atMs": 9349,
+          "mediaTime": 0.567,
+          "currentTime": 0.592,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            2
+          ]
+        },
+        {
+          "key": "ended",
+          "pass": 0,
+          "atMs": 9392,
+          "mediaTime": 0.617,
+          "currentTime": 0.617,
+          "canvasSize": [
+            960,
+            540
+          ],
+          "topLeft": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "bottomRight": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "center": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "frameCallbacksTotal": 31,
+      "playbackQuality": {
+        "totalVideoFrames": 37,
+        "droppedVideoFrames": 0
+      }
+    }
+  ],
+  "errors": [],
+  "timedOut": false,
+  "finishedReason": "complete",
+  "totalMs": 9415,
+  "summary": "intro: 3840x2160 dur=2.6 ended=yes frameCb=129 TL.a=[0,0,0,0] C.a=[0,253,253,253] | loop: 3840x2160 dur=2.85 ended=yes frameCb=296 TL.a=[0,0,0,0,0,0] C.a=[253,253,253,253,253,253] | outro: 3840x2160 dur=0.617 ended=yes frameCb=31 TL.a=[0,0,0,0] C.a=[253,253,2,0] | errors=0",
+  "finishedAt": "2026-11-16T17:03:30.656Z"
+}

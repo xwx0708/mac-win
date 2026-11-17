@@ -1,0 +1,13 @@
+{
+  "port": 47110,
+  "local_api_port": 47111,
+  "watch_interval_seconds": 1,
+  "allowed_devices": {
+    "nNhrvrEcpz11CNTRL": "Windows（xwx）",
+    "n7yfcGzXJ121CNTRL": "Mac（wenxuanmacbook-pro）"
+  },
+  "shared_dirs": {
+    "nNhrvrEcpz11CNTRL": "E:\\收件箱\\Mac互传",
+    "n7yfcGzXJ121CNTRL": "~/Windows互传"
+  }
+}

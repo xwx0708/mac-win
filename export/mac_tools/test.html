@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>splash alpha test</title>
+<style>
+  html, body { margin: 0; padding: 0; background: rgb(255, 0, 255); }
+  body { font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; color: #000; }
+  #v { display: block; width: 960px; height: 540px; object-fit: contain; margin: 20px 20px 8px 20px; }
+  #status { margin: 0 20px; white-space: pre-wrap; word-break: break-all; }
+  #c { display: none; }
+</style>
+</head>
+<body>
+<video id="v" muted playsinline preload="auto" width="960" height="540"></video>
+<div id="status">starting…</div>
+<canvas id="c" width="960" height="540"></canvas>
+<script>
+(function () {
+  'use strict';
+
+  var T0 = performance.now();
+  var GLOBAL_TIMEOUT_MS = 40000;
+  function ms() { return Math.round(performance.now() - T0); }
+  function r3(x) {
+    if (typeof x === 'number') return isFinite(x) ? Math.round(x * 1000) / 1000 : String(x);
+    return x === undefined ? null : x;
+  }
+
+  var rawName = new URLSearchParams(location.search).get('name') || 'unnamed';
+  var NAME = /^[A-Za-z0-9_]+$/.test(rawName) ? rawName : 'unnamed';
+
+  var video = document.getElementById('v');
+  var canvas = document.getElementById('c');
+  var statusEl = document.getElementById('status');
+  var ctx = null;
+
+  var result = {
+    name: NAME,
+    userAgent: navigator.userAgent,
+    url: location.href,
+    startedAt: new Date().toISOString(),
+    hasRequestVideoFrameCallback: typeof HTMLVideoElement !== 'undefined' &&
+      typeof HTMLVideoElement.prototype.requestVideoFrameCallback === 'function',
+    canPlayType: {},
+    segments: [],
+    errors: [],
+    timedOut: false,
+    finishedReason: null,
+    totalMs: null,
+    summary: null
+  };
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function errToObj(e) {
+    if (e === null || e === undefined) return null;
+    if (typeof e !== 'object') return { message: String(e) };
+    var o = {
+      name: e.name || (e.constructor && e.constructor.name) || 'Error',
+      message: (e.message !== undefined && e.message !== null) ? String(e.message) : String(e)
+    };
+    if (e.code !== undefined) o.code = e.code;
+    if (e.stack) o.stack = String(e.stack).slice(0, 2000);
+    return o;
+  }
+  function logErr(where, e) {
+    var o = errToObj(e) || { message: 'null error' };
+    o.where = where;
+    o.atMs = ms();
+    result.errors.push(o);
+  }
+
+  window.addEventListener('error', function (ev) {
+    logErr('window.onerror', ev.error || { message: ev.message + ' @ ' + ev.filename + ':' + ev.lineno });
+  });
+  window.addEventListener('unhandledrejection', function (ev) { logErr('unhandledrejection', ev.reason); });
+
+  try {
+    ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('canvas.getContext("2d") returned null');
+  } catch (e) { logErr('getContext', e); ctx = null; }
+
+  try {
+    result.canPlayType = {
+      'video/quicktime; codecs="hvc1"': video.canPlayType('video/quicktime; codecs="hvc1"'),
+      'video/mp4; codecs="hvc1"': video.canPlayType('video/mp4; codecs="hvc1"')
+    };
+  } catch (e) { logErr('canPlayType', e); }
+
+  // ---------------------------------------------------------------- helpers
+
+  function mediaErrorObj() {
+    var me = video.error;
+    if (!me) return null;
+    return { name: 'MediaError', code: me.code, message: me.message || ('MediaError code ' + me.code) };
+  }
+
+  // resolve on any of okTypes, reject on any of failTypes or timeout
+  function waitFor(target, okTypes, failTypes, timeoutMs, label) {
+    return new Promise(function (resolve, reject) {
+      var timer = null;
+      function cleanup() {
+        clearTimeout(timer);
+        okTypes.forEach(function (t) { target.removeEventListener(t, onOk); });
+        failTypes.forEach(function (t) { target.removeEventListener(t, onFail); });
+      }
+      function onOk(ev) { cleanup(); resolve(ev.type); }
+      function onFail(ev) {
+        cleanup();
+        reject(mediaErrorObj() || new Error(label + ': ' + ev.type));
+      }
+      okTypes.forEach(function (t) { target.addEventListener(t, onOk); });
+      failTypes.forEach(function (t) { target.addEventListener(t, onFail); });
+      timer = setTimeout(function () {
+        cleanup();
+        reject(new Error(label + ': timeout after ' + timeoutMs + ' ms'));
+      }, timeoutMs);
+    });
+  }
+
+  function withTimeout(p, timeoutMs, label) {
+    var timer = null;
+    var t = new Promise(function (_, reject) {
+      timer = setTimeout(function () { reject(new Error(label + ': timeout after ' + timeoutMs + ' ms')); }, timeoutMs);
+    });
+    return Promise.race([Promise.resolve(p), t]).then(
+      function (v) { clearTimeout(timer); return v; },
+      function (e) { clearTimeout(timer); throw e; });
+  }
+
+  // Draw the current video frame to a transparent canvas (1/4 linear size) and read 3 pixels (RGBA, un-premultiplied).
+  function samplePixels() {
+    if (!ctx) return { error: 'no 2d context' };
+    var vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return { error: 'videoWidth/videoHeight is 0' };
+    var cw = Math.max(1, Math.round(vw / 4)), ch = Math.max(1, Math.round(vh / 4));
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.drawImage(video, 0, 0, cw, ch);
+    function px(x, y) { return Array.prototype.slice.call(ctx.getImageData(x, y, 1, 1).data); }
+    return {
+      canvasSize: [cw, ch],
+      topLeft: px(0, 0),
+      bottomRight: px(cw - 1, ch - 1),
+      center: px(Math.floor(cw / 2), Math.floor(ch / 2))
+    };
+  }
+
+  function takeSample(seg, passIndex, key, mediaTime) {
+    var s = { key: key, pass: passIndex, atMs: ms(), mediaTime: r3(mediaTime), currentTime: r3(video.currentTime) };
+    try {
+      var px = samplePixels();
+      for (var k in px) { if (Object.prototype.hasOwnProperty.call(px, k)) s[k] = px[k]; }
+    } catch (e) { s.error = errToObj(e); }
+    seg.samples.push(s);
+  }
+
+  // Count frame callbacks during one pass and sample at start / middle / near end.
+  function startFrameWatch(seg, pass) {
+    var dur = video.duration;
+    var hasDur = isFinite(dur) && dur > 0;
+    var targets = [
+      { key: 'start', test: function () { return true; } },
+      { key: 'middle', test: function (t) { return hasDur && t >= dur * 0.5; } },
+      { key: 'nearEnd', test: function (t) { return hasDur && t >= dur - Math.max(3 / 60, dur * 0.1); } }
+    ];
+    var next = 0, active = true, handle = null, lastT = -1;
+    var useRVFC = typeof video.requestVideoFrameCallback === 'function';
+    pass.callbackKind = useRVFC ? 'requestVideoFrameCallback' : 'requestAnimationFrame';
+
+    function onFrame(now, meta) {
+      if (!active) return;
+      try {
+        pass.frameCallbacks++;
+        var t = (meta && typeof meta.mediaTime === 'number') ? meta.mediaTime : video.currentTime;
+        if (pass.firstMediaTime === null) pass.firstMediaTime = r3(t);
+        pass.lastMediaTime = r3(t);
+        if (meta && typeof meta.presentedFrames === 'number') pass.presentedFrames = meta.presentedFrames;
+        var keys = [];
+        while (next < targets.length && targets[next].test(t)) { keys.push(targets[next].key); next++; }
+        if (keys.length) takeSample(seg, pass.index, keys.join('+'), t);
+      } catch (e) { logErr('frameCallback', e); }
+      schedule();
+    }
+    function schedule() {
+      if (!active) return;
+      if (useRVFC) {
+        handle = video.requestVideoFrameCallback(onFrame);
+      } else {
+        handle = requestAnimationFrame(function (now) {
+          if (!active) return;
+          var t = video.currentTime;
+          if (t !== lastT) { lastT = t; onFrame(now, { mediaTime: t }); } else { schedule(); }
+        });
+      }
+    }
+    schedule();
+    return {
+      stop: function () {
+        active = false;
+        try {
+          if (handle !== null) {
+            if (useRVFC) video.cancelVideoFrameCallback(handle); else cancelAnimationFrame(handle);
+          }
+        } catch (e) { /* ignore */ }
+      }
+    };
+  }
+
+  // ---------------------------------------------------------------- segments
+
+  async function playSegment(label, src, passes) {
+    var seg = {
+      label: label, src: src, requestedPasses: passes,
+      videoWidth: 0, videoHeight: 0, duration: null,
+      playedToEnd: false, error: null, passes: [], samples: [], frameCallbacksTotal: 0
+    };
+    result.segments.push(seg);
+    setStatus('playing ' + label + ' …');
+    try {
+      var metaP = waitFor(video, ['loadedmetadata'], ['error'], 15000, label + ' loadedmetadata');
+      video.src = src;
+      video.load();
+      await metaP;
+      if (video.readyState < 2) {
+        try {
+          await waitFor(video, ['loadeddata', 'canplay'], ['error'], 15000, label + ' loadeddata');
+        } catch (e) { seg.loadDataWarning = errToObj(e); }
+      }
+      seg.videoWidth = video.videoWidth;
+      seg.videoHeight = video.videoHeight;
+      seg.duration = r3(video.duration);
+
+      for (var p = 0; p < passes; p++) {
+        var pass = {
+          index: p, callbackKind: null, frameCallbacks: 0, firstMediaTime: null, lastMediaTime: null,
+          presentedFrames: null, ended: false, playError: null, endError: null, startMs: ms(), endMs: null
+        };
+        seg.passes.push(pass);
+
+        if (p > 0) {
+          try {
+            var seekP = waitFor(video, ['seeked'], ['error'], 5000, label + ' seek to 0');
+            video.currentTime = 0;
+            await seekP;
+          } catch (e) { pass.seekError = errToObj(e); }
+        }
+
+        var durS = isFinite(video.duration) ? video.duration : 5;
+        var endedP = waitFor(video, ['ended'], ['error'], Math.max(8000, Math.round(durS * 3000) + 5000), label + ' ended');
+        endedP.catch(function () {}); // handled below; avoid unhandledrejection noise
+        var watcher = startFrameWatch(seg, pass);
+
+        try {
+          await withTimeout(video.play(), 10000, label + ' play()');
+          pass.playResolvedMs = ms();
+        } catch (e) {
+          pass.playError = errToObj(e);
+          seg.error = seg.error || pass.playError;
+          watcher.stop();
+          pass.endMs = ms();
+          break;
+        }
+
+        try {
+          await endedP;
+          pass.ended = true;
+        } catch (e) {
+          pass.endError = errToObj(e);
+          seg.error = seg.error || pass.endError;
+        }
+        pass.endMs = ms();
+        watcher.stop();
+        takeSample(seg, p, 'ended', video.currentTime);
+        if (!pass.ended) break;
+      }
+      seg.playedToEnd = seg.passes.length === passes && seg.passes.every(function (x) { return x.ended; });
+    } catch (e) {
+      seg.error = errToObj(e);
+    }
+    seg.frameCallbacksTotal = seg.passes.reduce(function (a, x) { return a + x.frameCallbacks; }, 0);
+    try {
+      if (typeof video.getVideoPlaybackQuality === 'function') {
+        var q = video.getVideoPlaybackQuality();
+        seg.playbackQuality = { totalVideoFrames: q.totalVideoFrames, droppedVideoFrames: q.droppedVideoFrames };
+      }
+    } catch (e) { /* ignore */ }
+    var me = mediaErrorObj();
+    if (me) seg.mediaError = me;
+    return seg;
+  }
+
+  function summarize() {
+    var parts = result.segments.map(function (seg) {
+      var alphas = function (key) {
+        return seg.samples.filter(function (s) { return s[key]; }).map(function (s) { return s[key][3]; }).join(',');
+      };
+      return seg.label + ': ' + seg.videoWidth + 'x' + seg.videoHeight +
+        ' dur=' + seg.duration +
+        ' ended=' + (seg.playedToEnd ? 'yes' : 'NO') +
+        ' frameCb=' + seg.frameCallbacksTotal +
+        ' TL.a=[' + alphas('topLeft') + ']' +
+        ' C.a=[' + alphas('center') + ']' +
+        (seg.error ? ' ERR=' + seg.error.message : '');
+    });
+    return parts.join(' | ') + ' | errors=' + result.errors.length + (result.timedOut ? ' TIMEOUT' : '');
+  }
+
+  // ---------------------------------------------------------------- finish
+
+  var finalized = false;
+  async function finalize(reason) {
+    if (finalized) return;
+    finalized = true;
+    result.finishedReason = reason;
+    result.totalMs = ms();
+    result.finishedAt = new Date().toISOString();
+    try { video.pause(); } catch (e) { /* ignore */ }
+    try { result.summary = summarize(); } catch (e) { logErr('summarize', e); result.summary = 'summary failed'; }
+
+    var reportInfo = '';
+    var reportOk = false;
+    try {
+      var body = JSON.stringify(result);
+      var resp = await withTimeout(fetch('/report?name=' + encodeURIComponent(NAME), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body
+      }), 10000, 'report POST');
+      reportOk = resp.ok;
+      reportInfo = 'HTTP ' + resp.status;
+    } catch (e) {
+      reportInfo = 'error: ' + (e && e.message ? e.message : String(e));
+    }
+    setStatus(result.summary + '  [report ' + (reportOk ? 'ok' : 'FAILED') + ' ' + reportInfo + ']');
+    document.title = 'DONE';
+  }
+
+  async function main() {
+    video.muted = true;
+    video.playsInline = true;
+    var bust = 'v=' + Date.now();
+    await playSegment('intro', '/out/intro.mov?' + bust, 1);
+    if (finalized) return;
+    await playSegment('loop', '/out/loop.mov?' + bust, 2);
+    if (finalized) return;
+    await playSegment('outro', '/out/outro.mov?' + bust, 1);
+  }
+
+  setTimeout(function () {
+    if (finalized) return;
+    result.timedOut = true;
+    finalize('timeout after ' + GLOBAL_TIMEOUT_MS + ' ms');
+  }, GLOBAL_TIMEOUT_MS);
+
+  try {
+    main().then(
+      function () { return finalize('complete'); },
+      function (e) { logErr('main', e); return finalize('exception'); }
+    );
+  } catch (e) {
+    logErr('main (sync)', e);
+    finalize('exception');
+  }
+})();
+</script>
+</body>
+</html>

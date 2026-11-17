@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- 统一文件页的图标：两颗水滴正在融合（和开屏动画、状态栏的连接标记同一个母题）。
+       按 macOS 图标网格画：824 见方的圆角底板，四周留 100 的边。 -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c1e"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cfcfd4"/>
+    </linearGradient>
+    <filter id="goo" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="38"/>
+      <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -10"/>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity=".45"/>
+    </filter>
+    <mask id="dropmask"><g filter="url(#goo)" fill="#fff">
+      <circle cx="392" cy="520" r="150"/>
+      <circle cx="640" cy="508" r="128"/>
+    </g></mask>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="#111113" filter="url(#shadow)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="#ffffff" stroke-opacity=".10"/>
+  <rect x="100" y="100" width="824" height="824" fill="url(#drop)" mask="url(#dropmask)"/>
+  <!-- 高光 -->
+  <ellipse cx="350" cy="452" rx="44" ry="26" fill="#fff" opacity=".85" transform="rotate(-28 350 452)"/>
+</svg>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>统一文件页</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 两颗水滴融合：和开屏动画同一个母题，这里用来表示两台电脑的连接状态 -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <filter id="goo">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="2.4"/>
+        <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <div id="app">
+    <div id="toolbar"></div>
+    <div id="cmdbar"></div>
+    <div id="body">
+      <nav id="sidebar"></nav>
+      <main id="content"></main>
+      <aside id="preview"></aside>
+    </div>
+    <footer id="statusbar"></footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

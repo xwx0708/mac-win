@@ -1,0 +1,28 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "splash",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8731",
+        "--bind",
+        "127.0.0.1"
+      ],
+      "port": 8731
+    },
+    {
+      "name": "unified-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "unified/server.js"
+      ],
+      "port": 5521,
+      "env": {
+        "PORT": "5521"
+      }
+    }
+  ]
+}

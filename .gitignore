@@ -1,0 +1,16 @@
+# 依赖和浏览器配置（可重新生成，或含本机登录数据）
+node_modules/
+.edge-profile/
+edge-profile/
+
+# 互联服务运行时数据：日志、任务记录、操作记录
+link/logs/
+link/state/
+__pycache__/
+*.pyc
+
+# 开屏动画导出的 PNG 序列（约 60 MB，可用 export/render.html 重新渲染）
+export/frames/
+
+# 图标生成的中间产物
+*.icns

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>开屏动画 · 逐帧导出</title>
+<style>
+  body { margin: 0; font: 14px/1.6 system-ui, sans-serif; background: #ddd; padding: 16px; }
+  canvas { width: 640px; height: 360px; display: block; margin-top: 12px;
+           background: repeating-conic-gradient(#bbb 0% 25%, #eee 0% 50%) 0 0 / 24px 24px; }
+</style>
+</head>
+<body>
+<div id="log">准备中…</div>
+<canvas id="c"></canvas>
+<script>
+/* 按固定时间步逐帧渲染 splash.frag，把带透明通道的 PNG 交给 capture_server.py 存盘。
+   用 ?run=1 打开即开始；?seg=intro&i=30 只预览某一帧，不存盘。 */
+const VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a, 0., 1.); }`;
+const log = document.getElementById('log');
+window.progress = { state: 'init', done: 0, total: 0, error: null };
+
+(async function () {
+  const spec = await (await fetch('spec.json')).json();
+  const FRAG = await (await fetch('splash.frag')).text();
+  const canvas = document.getElementById('c');
+  canvas.width = spec.width; canvas.height = spec.height;
+  const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: true });
+  const prog = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, FRAG]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { window.progress.error = gl.getShaderInfoLog(s); log.textContent = window.progress.error; return; }
+    gl.attachShader(prog, s);
+  }
+  gl.linkProgram(prog); gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = n => gl.getUniformLocation(prog, n);
+  const uRes = U('uRes'), uT = U('uT'), uQ1 = U('uQ1'), uQ2 = U('uQ2');
+  gl.viewport(0, 0, spec.width, spec.height);
+  gl.uniform2f(uRes, spec.width, spec.height);
+
+  // 每一段第 i 帧对应的着色器输入
+  function inputs(seg, i) {
+    const dt = spec.dt;
+    if (seg === 'intro') return { t: i * dt, q1: -1, q2: 0 };
+    if (seg === 'loop')  return { t: spec.t_loop + i * dt, q1: -1, q2: 0 };
+    if (seg === 'check') return { t: spec.t_loop + spec.loop_period + i * dt, q1: -1, q2: 0 };   // 循环一圈之后的画面，应与 loop 的同号帧相同
+    const e = i * dt;                                                                           // outro
+    return { t: spec.t_loop + e, q1: Math.min(e / spec.e1, 1), q2: e < spec.e1 ? 0 : Math.min((e - spec.e1) / spec.e2, 1) };
+  }
+  function draw(seg, i) {
+    const x = inputs(seg, i);
+    gl.uniform1f(uT, x.t); gl.uniform1f(uQ1, x.q1); gl.uniform1f(uQ2, x.q2);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  window.draw = draw;
+
+  const params = new URLSearchParams(location.search);
+  if (!params.has('run')) {
+    draw(params.get('seg') || 'intro', +(params.get('i') || 30));
+    window.progress.state = 'preview'; log.textContent = '预览模式';
+    return;
+  }
+
+  const jobs = [];
+  for (const [seg, n] of Object.entries(spec.segments)) for (let i = 0; i < n; i++) jobs.push([seg, i]);
+  jobs.push(['check', 0], ['check', 1]);
+  window.progress.total = jobs.length; window.progress.state = 'running';
+  try {
+    const from = +(params.get('from') || 0);   // 续传：跳过前面已存好的帧
+    window.progress.done = from;
+    for (const [seg, i] of jobs.slice(from)) {
+      draw(seg, i);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      // 偶发的网络错误重试几次，仍失败才中止
+      for (let attempt = 1; ; attempt++) {
+        try {
+          const res = await fetch(`/save?seg=${seg}&i=${i}`, { method: 'POST', body: blob });
+          if (!res.ok) throw new Error(`保存失败 ${seg} ${i}: ${res.status}`);
+          break;
+        } catch (err) {
+          if (attempt >= 6) throw err;
+          await new Promise(r => setTimeout(r, 300 * attempt));
+        }
+      }
+      window.progress.done++;
+      log.textContent = `${window.progress.done} / ${jobs.length}  ${seg} ${i}`;
+    }
+    window.progress.state = 'done'; log.textContent = '完成';
+  } catch (err) { window.progress.state = 'error'; window.progress.error = String(err); log.textContent = String(err); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "unified-files",
+  "productName": "统一文件页",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mac 与 Windows 的统一文件页（桌面 App）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^45.3.3"
+  }
+}

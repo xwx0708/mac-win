@@ -1,0 +1,135 @@
+precision highp float;
+uniform vec2  uRes;
+uniform float uT;    // 时间线秒
+uniform float uQ1;   // 展开进度 0..1，未开始为 -1
+uniform float uQ2;   // 揭开进度 0..1
+
+const float T1 = 2.20;
+const float M  = 0.060;
+const float RC = 0.030;
+const float W0 = 1.1023132;   // 循环基频 = 2π / 5.70（仅导出版）
+
+// ---- 形态 ----
+const float RD      = .105;   // 液滴半径
+const float H0      = .034;   // 水滴头部半径
+const float TAILLEN = 4.5;    // 拖尾长度（头部半径的倍数）
+const float TAPER   = 1.15;   // 拖尾收细的曲线
+const float BLUR    = .018;   // 拖尾尾尖的模糊量
+const float BOB     = .012;   // 液滴上下浮动的幅度
+const float KS      = .04;    // 两颗水滴靠近时的粘连程度
+const int   N       = 28;     // 拖尾分段数
+
+// ---- 轨迹 ----
+// 像两颗星体的引力相遇，分两段：
+//   1) t < TA：沿缓弧冲入，瞄准的不是中心而是偏开 PERI 的一点，于是两者擦肩而过；
+//   2) t ≥ TA：被对方俘获，立刻向内拐、互绕，轨道收紧、转速在最后急剧加快，直到相撞。
+// 擦肩那一刻速度方向正好是切向，所以两段的位置和速度都连续。
+const float TA   = 1.2;    // 擦肩而过的时刻
+const float PERI = .075;   // 擦肩时离中心的距离
+const float V0   = .45;    // 擦肩时的速度
+const float DEC  = .50;    // 冲入阶段的减速量（越大入场越快）
+const float ARC  = .40;    // 入场弧线的弯曲程度（0 为直线）
+const float CONV = 1.7;    // 互绕收拢的早晚：越接近 1 越早向内拐
+const float SPIN = 3.0;    // 末段额外加速转过的弧度
+
+float smin(float a, float b, float k){ float h = max(k - abs(a - b), 0.) / k; return min(a, b) - h*h*k*.25; }
+float ease(float x){ x = clamp(x, 0., 1.); return x < .5 ? 4.*x*x*x : 1. - pow(-2.*x + 2., 3.) * .5; }
+float rbox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
+
+// 从左下角来的那颗水滴的头部位置；另一颗与它关于屏幕中心对称
+vec2 path(float t){
+  vec2 dir = normalize(uRes);          // 左下 → 右上
+  vec2 per = vec2(-dir.y, dir.x);      // 从行进方向的左侧绕过中心，之后顺时针互绕
+  if (t < TA) { float k = TA - t; return per * (PERI - ARC * k * k) - dir * (V0 * k + DEC * k * k); }
+  float T2 = T1 - TA;
+  float u  = min((t - TA) / T2, 1.);
+  float r  = PERI * (1. - pow(u, CONV));
+  float a  = atan(per.y, per.x) - V0 / PERI * T2 * u - SPIN * pow(u, 4.);
+  return r * vec2(cos(a), sin(a));
+}
+// 相撞瞬间两颗水滴连线的方向
+float endAngle(){ vec2 d = normalize(uRes); return atan(d.x, -d.y) - V0 / PERI * (T1 - TA) - SPIN; }
+
+// 一颗水滴：返回到头部（清晰）的距离；拖尾单独输出，越靠尾尖越模糊。
+// dTail：到拖尾的距离；fTail：最近处在拖尾上的位置 0..1
+float comet(vec2 p, float tau, out float dTail, out float fTail){
+  float g  = smoothstep(.86, 1., tau / T1);          // 相撞前头部鼓起、尾巴收回
+  float hr = mix(H0, RD * .8, g);
+  vec2  a  = path(tau);
+  // 尾长按空间长度给定，除以速度换算成时间；头部与尾巴中段的速度取平均，减速时尾巴不会被拉长
+  float sp  = max(length(a - path(tau - .02)) / .02, .3);
+  float len = TAILLEN * H0 * (1. - g);
+  float tm  = tau - .5 * len / sp;
+  sp = .5 * (sp + max(length(path(tm) - path(tm - .02)) / .02, .3));
+  float dt  = len / sp / float(N);
+  vec2  hp   = a;
+  float head = length(p - a) - hr;
+  // 先找拖尾中心线上离本像素最近的一点（位置在空间上连续变化），再按该处的粗细求距离，
+  // 粗细和模糊量才能平滑过渡，不出现一节一节的条纹。
+  float dc = 1e3, fn = 0.;
+  vec2  qn = a;
+  for (int i = 1; i <= N; i++){
+    vec2 b = path(tau - dt * float(i));
+    vec2 pa = p - a, ba = b - a;
+    float h  = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0., 1.);
+    float ds = length(pa - ba * h);
+    if (ds < dc) { dc = ds; fn = (float(i) - 1. + h) / float(N); qn = a + ba * h; }
+    a = b;
+  }
+  dTail = dc - hr * pow(1. - fn, TAPER);
+  // 模糊量取"沿拖尾的位置"和"离头部的实际距离"中较小的一个：拖尾卷在头部周围时不会糊成一圈光晕
+  fTail = min(fn, length(qn - hp) / (TAILLEN * H0)) * (1. - g);
+  return head;
+}
+
+// 拖尾覆盖度：靠近头部的一段保持实心；模糊只向内收，轮廓不被糊胖；同时逐渐变淡
+float tailCov(float d, float f, float px){
+  float b = BLUR * smoothstep(.1, 1., f);
+  return (1. - smoothstep(-px - 1.3 * b, px + .7 * b, d)) * (1. - f * f * f);
+}
+
+// 液滴表面的波动（相对半径的比例）
+float wob(float th, float t){ return .035*sin(2.*th + W0*t) + .020*sin(3.*th - W0*t); }
+
+// 融合后的悬浮液滴：回弹 + 两瓣余振 + 持续波动 + 上下浮动
+float idle(vec2 p){
+  float u = max(uT - T1, 0.);
+  float settle = 1. - smoothstep(2., 3., u);              // 仅导出版：余振在 u=3 精确归零
+  float spring = 1. - .2 * settle * exp(-2.6*u) * cos(5.5*u);
+  p.y -= BOB * sin(u * W0) * smoothstep(0., 2., u);
+  float th = atan(p.y, p.x);
+  float am = endAngle() - 3. * (1. - exp(-1.5 * u));   // 相撞后带着余下的自旋慢慢停住
+  float lobe = .20 * settle * exp(-2.2*u) * sin(4.6*u) * cos(2.*(th - am));
+  return length(p) - RD * spring * (1. + smoothstep(0., .6, u) * wob(th, uT) + lobe);
+}
+
+void main(){
+  float S  = min(uRes.x, uRes.y);              // 以短边为 1，横竖窗口比例一致
+  vec2  p  = (gl_FragCoord.xy - .5 * uRes) / S;
+  float px = 1.2 / S;
+  vec2  HW = .5 * uRes / S - M;                // App 窗口的半宽、半高
+  float d, fade = 1., soft = 0.;
+
+  if (uQ1 < 0.) {
+    if (uT < T1) {
+      // 飞入 / 擦肩 / 互绕
+      float t1, f1, t2, f2;
+      float h1 = comet(p, uT, t1, f1), h2 = comet(-p, uT, t2, f2);
+      d = smin(h1, h2, KS);
+      soft = max(tailCov(t1, f1, px), tailCov(t2, f2, px));
+    } else {
+      d = idle(p);                             // 悬浮等待
+    }
+  } else if (uQ2 <= 0.) {
+    // 展开：液滴变形成 App 窗口的圆角矩形
+    float k = ease(uQ1);
+    d = mix(idle(p), rbox(p, mix(vec2(RD), HW, k), mix(RD, RC, k)), smoothstep(0., .25, uQ1));
+  } else {
+    // 揭开：黑色淡出，露出下面的 App
+    d = rbox(p, HW, RC);
+    fade = 1. - ease(uQ2);
+  }
+
+  float a = max(1. - smoothstep(-px, px, d), soft) * fade;
+  gl_FragColor = vec4(0., 0., 0., a);          // 纯黑 + 透明
+}

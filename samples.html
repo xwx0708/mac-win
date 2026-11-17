@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>开屏动画 · 四个样板</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #111; font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; }
+
+  /* 2×2 分屏；每一格模拟一块"透明桌面" */
+  #grid { display: grid; grid-template: 1fr 1fr / 1fr 1fr; gap: 2px; height: 100%; }
+  #grid.solo { display: block; }
+  #grid.solo .pane { display: none; height: 100%; }
+  #grid.solo .pane.on { display: block; }
+
+  .pane { position: relative; overflow: hidden; }
+  body[data-bg="0"] .pane { background: linear-gradient(135deg, #e9edf3 0%, #cfd8e6 55%, #b9c6da 100%); }
+  body[data-bg="1"] .pane { background: radial-gradient(120% 120% at 15% 10%, #ffd9a8 0%, #f29a8a 35%, #7a6ad8 75%, #2b3a8c 100%); }
+  body[data-bg="2"] .pane { background: #ffffff; }
+  body[data-bg="3"] .pane { background: linear-gradient(160deg, #26303f 0%, #10151d 100%); }
+
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .tag { position: absolute; left: 12px; top: 10px; z-index: 3; font-size: 12px; letter-spacing: .08em;
+         color: #111; background: rgba(255,255,255,.72); padding: 3px 9px; border-radius: 999px;
+         backdrop-filter: blur(6px); user-select: none; }
+
+  /* 占位用的 App 前端：以后换成真正的界面 */
+  .app { position: absolute; opacity: 0; background: #fafafa; overflow: hidden; display: grid;
+         grid-template-columns: 18% 1fr; color: #111; box-shadow: 0 18px 60px rgba(0,0,0,.28); }
+  .app aside { background: #111; padding: 9% 12%; display: flex; flex-direction: column; gap: 6%; }
+  .app aside i { display: block; height: 3.2%; min-height: 6px; border-radius: 99px; background: rgba(255,255,255,.22); }
+  .app aside i:first-child { width: 46%; height: 5%; background: #fff; margin-bottom: 14%; }
+  .app aside i:nth-child(3) { background: rgba(255,255,255,.8); }
+  .app main { padding: 5% 6%; display: flex; flex-direction: column; gap: 5%; min-width: 0; }
+  .app h1 { font-size: clamp(13px, 2.6cqh, 26px); font-weight: 600; letter-spacing: -.01em; }
+  .app p { font-size: clamp(10px, 1.6cqh, 14px); color: #777; margin-top: .4em; }
+  .app .cards { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: 1fr 1.4fr; gap: 4%; }
+  .app .cards b { border-radius: 10px; background: #ececec; }
+  .app .cards b:nth-child(1) { background: #111; }
+  .app .cards b:nth-child(4) { grid-column: span 2; }
+  .pane { container-type: size; }
+
+  #hud { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 9; font-size: 12px;
+         color: #eee; background: rgba(0,0,0,.62); padding: 5px 14px; border-radius: 999px;
+         backdrop-filter: blur(8px); white-space: nowrap; user-select: none; }
+  #hud kbd { font: inherit; font-weight: 600; color: #fff; }
+</style>
+</head>
+<body data-bg="0">
+<div id="grid"></div>
+<div id="hud"><kbd>R</kbd> 重播　<kbd>1–4</kbd> 单独放大　<kbd>Esc</kbd> 回到四分屏　<kbd>B</kbd> 换桌面底图　<kbd>空格</kbd> 停在液滴 / 放行</div>
+
+<script>
+/* ---------- 时间线（秒） ---------- */
+const T1 = 2.0;          // 飞入 + 螺旋结束，两道光在中心相遇
+const INTRO_END = 3.2;   // 最早允许展开的时刻（保证液滴至少完整出现一下）
+const DEMO_LOAD = 5.0;   // 模拟"加载完成"的时刻
+const REST = 2.6;        // 展开结束后停留多久再自动重播
+
+/* ---------- 四个样板 ---------- */
+const VARIANTS = [
+  { name: 'A 丝带', E1: .70, E2: .50,
+    def: { R0: 1.35, RPOW: 1.5, APOW: 2.6, TURNS: .75, H0: .022, TAIL: .42, TW: .80, TAPER: 1.2, BOB: .012, KS: .06 } },
+  { name: 'B 墨滴', E1: .85, E2: .80,
+    def: { R0: 1.35, RPOW: 1.5, APOW: 2.6, TURNS: .60, H0: .050, TAIL: .26, TW: .75, TAPER: 0.8, BOB: .018, KS: .09 } },
+  { name: 'C 彗星', E1: .90, E2: .60,
+    def: { R0: 1.35, RPOW: 1.5, APOW: 2.2, TURNS: 1.25, H0: .014, TAIL: .60, TW: .70, TAPER: 1.6, BOB: .008, KS: .04 } },
+  { name: 'D 磁流体', E1: .85, E2: .70,
+    def: { R0: 1.35, RPOW: 1.5, APOW: 2.6, TURNS: 1.0, H0: .034, TAIL: .30, TW: .90, TAPER: 1.0, BOB: .010, KS: .07 } },
+];
+
+const VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a, 0., 1.); }`;
+
+const FRAG = `
+precision highp float;
+uniform vec2  uRes;
+uniform float uT;    // 开屏开始后的秒数
+uniform float uQ1;   // 展开·铺满阶段进度 0..1，未开始为 -1
+uniform float uQ2;   // 展开·揭开阶段进度 0..1
+
+const float T1 = ${T1.toFixed(2)};
+const float RD = .105;   // 液滴半径（以屏幕高度为 1）
+const float M  = .06;    // App 窗口到屏幕边缘的留白
+const float RC = .03;    // App 窗口圆角
+const int   N  = 16;     // 尾迹分段数
+const float TAU = 6.2831853;
+
+float smin(float a, float b, float k){ float h = max(k - abs(a - b), 0.) / k; return min(a, b) - h*h*k*.25; }
+float ease(float x){ x = clamp(x, 0., 1.); return x < .5 ? 4.*x*x*x : 1. - pow(-2.*x + 2., 3.) * .5; }
+float rbox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
+
+float startAngle(){ return atan(-uRes.y, -uRes.x); }   // 指向左下角
+
+// 一道光的头部轨迹：先近乎直线冲入，越靠近中心转得越快
+vec2 path(float tau){
+  float s = tau / T1;
+  float r = R0 * pow(max(1. - s, 0.), RPOW);
+  float a = startAngle() + TURNS * TAU * pow(clamp(s, 0., 1.), APOW);
+  return r * vec2(cos(a), sin(a));
+}
+
+// 头部 + 逐渐收细的尾迹
+float comet(vec2 p, float tau){
+  float s    = tau / T1;
+  float hr   = mix(H0, RD * .8, smoothstep(.82, 1., s));
+  float tl   = TAIL * (1. - smoothstep(.82, 1., s));
+  float dt   = tl / float(N);
+  vec2  a    = path(tau);
+  float head = length(p - a) - hr;
+  float ra   = hr * TW;
+  float d    = 1e3;
+  for (int i = 1; i <= N; i++){
+    float f  = float(i) / float(N);
+    vec2  b  = path(tau - dt * float(i));
+    float rb = hr * TW * pow(1. - f, TAPER);
+    vec2 pa = p - a, ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-8), 0., 1.);
+    d = min(d, length(pa - ba * h) - mix(ra, rb, h));
+    a = b; ra = rb;
+  }
+  return smin(head, d, .02);
+}
+
+#if V == 1
+// 墨滴：尾迹后面甩出几颗小液珠，稍后被吸回主体
+float beads(vec2 p, float tau){
+  float d = 1e3;
+  for (int j = 0; j < 3; j++){
+    float lag = TAIL * (1.15 + .5 * float(j));
+    vec2 c = path(min(tau - lag, T1));
+    d = min(d, length(p - c) - (.017 - .004 * float(j)));
+  }
+  return d;
+}
+#endif
+
+// 液滴表面的波动（相对半径的比例）
+float wob(float th, float t){
+#if V == 0
+  return .035*sin(2.*th + 1.1*t) + .020*sin(3.*th - 1.7*t);
+#elif V == 1
+  return .070*sin(2.*th + .9*t) + .040*sin(3.*th - 1.3*t) + .020*sin(4.*th + 2.*t);
+#elif V == 2
+  return .022*sin(3.*th + 2.2*t) + .015*sin(5.*th - 3.1*t) + .009*sin(8.*th + 4.3*t);
+#else
+  return pow(abs(cos(4.5*th + .25*t)), 4.) * (.13 + .07*sin(2.6*t)) + .02*sin(2.*th + t);
+#endif
+}
+
+float blob(vec2 p, float R, float amp){
+  return length(p) - R * (1. + amp * wob(atan(p.y, p.x), uT));
+}
+
+// 融合后的悬浮液滴：回弹 + 两瓣余振 + 持续波动 + 上下浮动
+float idle(vec2 p){
+  float u = max(uT - T1, 0.);
+  float spring = 1. - .2 * exp(-5.*u) * cos(13.*u);
+  p.y -= BOB * sin(u * 1.3) * smoothstep(0., 2., u);
+  float th = atan(p.y, p.x);
+  float am = startAngle() + TURNS * TAU;
+  float lobe = .22 * exp(-3.5*u) * sin(11.*u) * cos(2.*(th - am));
+  return length(p) - RD * spring * (1. + smoothstep(0., .6, u) * wob(th, uT) + lobe);
+}
+
+void main(){
+  float S    = min(uRes.x, uRes.y);   // 以短边为 1，竖屏窗口也不会撑破
+  vec2  p    = (gl_FragCoord.xy - .5 * uRes) / S;
+  float px   = 1.2 / S;
+  vec2  HW   = .5 * uRes / S - M;
+  float diag = length(HW) + .06;
+  float win  = rbox(p, HW, RC);
+  float d;
+  float fade = 1.;
+
+  if (uQ1 < 0.) {
+    // ---- 飞入 / 螺旋 / 融合 / 等待 ----
+    if (uT < T1) d = smin(comet(p, uT), comet(-p, uT), KS);
+    else         d = idle(p);
+#if V == 1
+    d = smin(d, min(beads(p, uT), beads(-p, uT)), .03);
+#endif
+  } else if (uQ2 <= 0.) {
+    // ---- 展开：液滴铺满 App 窗口 ----
+    float q = uQ1;
+    float start = smoothstep(0., .25, q);
+#if V == 0
+    float k = ease(q);
+    d = mix(idle(p), rbox(p, mix(vec2(RD), HW, k), mix(RD, RC, k)), start);
+#elif V == 1
+    float R = mix(RD, diag * 1.12, pow(q, 2.5));
+    d = max(mix(idle(p), blob(p, R, mix(1., .35, q)), start), win);
+#elif V == 2
+    float k1 = ease(q * 2.), k2 = ease(q * 2. - 1.);
+    vec2 b = vec2(mix(RD, HW.x, k1), mix(mix(RD, .004, k1), HW.y, k2));
+    float r = min(min(b.x, b.y), mix(RD, RC, k2));
+    d = mix(idle(p), rbox(p, b, r), start);
+#else
+    float pinch = 1. - .3 * sin(3.14159 * clamp(q / .35, 0., 1.));
+    float k = clamp((q - .35) / .65, 0., 1.);
+    float R = mix(RD * pinch, diag * 1.25, k * k * k);
+    d = max(mix(idle(p), blob(p, R, 1.), start), win);
+#endif
+  } else {
+    // ---- 揭开：黑色退场，露出 App ----
+    float q = ease(uQ2);
+#if V == 0
+    d = win; fade = 1. - q;
+#elif V == 1
+    float edge = mix(HW.y + .12, -HW.y - .12, q)
+               + sin(3.14159 * uQ2) * (.035*sin(p.x*7. + uT*3.) + .02*sin(p.x*13. - uT*4.));
+    d = max(win, p.y - edge);
+#elif V == 2
+    d = max(win, q * (HW.y + .01) - abs(p.y));
+#else
+    d = max(win, -blob(p, q * diag * 1.25, 1.));
+#endif
+  }
+
+  float a = (1. - smoothstep(-px, px, d)) * fade;
+  gl_FragColor = vec4(0., 0., 0., a);   // 纯黑 + 透明
+}`;
+
+/* ---------- 搭建四格 ---------- */
+const grid = document.getElementById('grid');
+const panes = VARIANTS.map((v, i) => {
+  const el = document.createElement('div');
+  el.className = 'pane';
+  el.innerHTML = `
+    <div class="app"><aside><i></i><i></i><i></i><i></i><i></i></aside>
+      <main><div><h1>App 前端占位</h1><p>样板 ${v.name} · 加载完成后从液滴展开</p></div>
+      <div class="cards"><b></b><b></b><b></b><b></b><b></b></div></main></div>
+    <canvas></canvas><div class="tag">${v.name}</div>`;
+  grid.appendChild(el);
+  const canvas = el.querySelector('canvas');
+  const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: false });
+  const defs = `#define V ${i}\n` + Object.entries(v.def).map(([k, x]) => `#define ${k} ${Number(x).toFixed(4)}`).join('\n') + '\n';
+  const prog = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, VERT], [gl.FRAGMENT_SHADER, defs + FRAG]]) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(v.name, gl.getShaderInfoLog(s));
+    gl.attachShader(prog, s);
+  }
+  gl.linkProgram(prog); gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = n => gl.getUniformLocation(prog, n);
+  return { v, el, canvas, gl, app: el.querySelector('.app'), uRes: U('uRes'), uT: U('uT'), uQ1: U('uQ1'), uQ2: U('uQ2') };
+});
+
+/* ---------- 时钟与对外接口 ---------- */
+const params = new URLSearchParams(location.search);
+const freeze = params.has('freeze') ? parseFloat(params.get('freeze')) : null;
+let t0 = performance.now(), finishAt = null, hold = false;
+
+function restart() { t0 = performance.now(); finishAt = null; }
+// 真正的 App 加载完后调用这一句，液滴就会展开
+window.splash = { finish() { if (finishAt === null) finishAt = (performance.now() - t0) / 1000; }, restart };
+
+function frame() {
+  const t = freeze !== null ? freeze : (performance.now() - t0) / 1000;
+  if (finishAt === null && !hold && t >= DEMO_LOAD) finishAt = DEMO_LOAD;   // 模拟加载
+  const expandAt = finishAt === null ? Infinity : Math.max(finishAt, INTRO_END);
+  const e = t - expandAt;
+  let done = true;
+
+  for (const P of panes) {
+    const { gl, canvas, v } = P;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (!w || !h) continue;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h);
+      const ch = Math.min(canvas.clientWidth, canvas.clientHeight), m = .06 * ch;
+      P.app.style.inset = m + 'px'; P.app.style.borderRadius = .03 * ch + 'px';
+    }
+    const q1 = e < 0 ? -1 : Math.min(e / v.E1, 1);
+    const q2 = e < v.E1 ? 0 : Math.min((e - v.E1) / v.E2, 1);
+    if (e < v.E1 + v.E2 + REST) done = false;
+    P.app.style.opacity = e >= v.E1 ? 1 : 0;
+    gl.uniform2f(P.uRes, w, h); gl.uniform1f(P.uT, t); gl.uniform1f(P.uQ1, q1); gl.uniform1f(P.uQ2, q2);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    if (q2 < 1) gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  if (done && freeze === null) restart();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- 按键 ---------- */
+function solo(i) {
+  grid.classList.toggle('solo', i >= 0);
+  panes.forEach((P, j) => P.el.classList.toggle('on', j === i));
+}
+addEventListener('keydown', ev => {
+  const k = ev.key.toLowerCase();
+  if (k === 'r') restart();
+  else if (k === 'b') document.body.dataset.bg = (+document.body.dataset.bg + 1) % 4;
+  else if (k === 'escape') solo(-1);
+  else if (k >= '1' && k <= '4') solo(+k - 1);
+  else if (k === ' ') { ev.preventDefault(); hold = !hold; if (!hold) window.splash.finish(); }
+});
+</script>
+</body>
+</html>
