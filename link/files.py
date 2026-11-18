@@ -20,7 +20,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from scope import Scope, is_absolute, posix
+from scope import Scope, cluster_size, is_absolute, posix
 
 CHUNK = 1 << 20          # 单次读写最多 1 MiB，大文件分块传，不会堵住通知
 LIST_PAGE_MAX = 1000     # 列目录分页时一页最多这么多项
@@ -137,6 +137,12 @@ class FileService:
              "size": 0 if is_dir else st.st_size, "mtime": st.st_mtime}
         if not is_dir:
             e["version"] = version_of(st)
+            # 实际占用的磁盘空间：Mac 直接读分配的块数，Windows 按所在盘的簇大小向上取整
+            blocks = getattr(st, "st_blocks", None)
+            if blocks is not None:
+                e["alloc"] = blocks * 512
+            elif (c := cluster_size(p)):
+                e["alloc"] = -(-st.st_size // c) * c
         if p.is_symlink():
             e["link"] = True
         # 系统里标成隐藏的（Windows 的隐藏/系统属性，Mac 的点开头或 hidden 标记），由界面决定显不显示

@@ -53,7 +53,8 @@ const clients = new Set();
 const { execFile } = require('child_process');
 const TS = ['C:\\Program Files\\Tailscale\\tailscale.exe', '/Applications/Tailscale.app/Contents/MacOS/Tailscale'].find((p) => fs.existsSync(p)) || 'tailscale';
 const LINK_DIR = path.join(ROOT, '..', 'link');
-const LINK_API = 47111;
+// 本机互联服务的接口端口：以 link/config.json 的 local_api_port 为准，读不到才用默认值
+const LINK_API = (() => { try { return JSON.parse(fs.readFileSync(path.join(LINK_DIR, 'config.json'), 'utf8')).local_api_port || 47111; } catch { return 47111; } })();
 const sendJson = (res, code, obj) => res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(obj));
 
 function linkApi(method, p, headers = {}, body = null) {

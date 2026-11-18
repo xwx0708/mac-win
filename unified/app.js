@@ -35,7 +35,7 @@ const ic = (n, c = '') => `<svg class="ic ${c}" viewBox="0 0 24 24"><path d="${P
 const DROP = 'M12 3C12 3 6 10 6 14.5a6 6 0 0 0 12 0C18 10 12 3 12 3z';
 let DEVS = [];
 const D = id => DEVS.find(d => d.id === id) || { id, name: '未知设备', host: '', os: '' };
-const SELF = () => DEVS.find(d => d.self) || { id: 'self', name: '本机', host: '', os: 'windows', self: true, online: true };
+const SELF = () => DEVS.find(d => d.self) || { id: 'self', name: '本机', host: '', os: /Mac/.test(navigator.platform) ? 'macos' : 'windows', self: true, online: true };
 const osCls = id => { const o = D(id).os; return o === 'windows' ? 'win' : o === 'macos' ? 'mac' : 'oth'; };
 const OS_SHORT = { windows: 'Windows', macos: 'Mac', ios: 'iPhone', android: 'Android', linux: 'Linux' };
 // 设备标记：水滴。Windows 实心尖朝左下，Mac 空心尖朝右上（开屏动画里两颗水滴的来向），其他系统空心尖朝上
@@ -48,6 +48,11 @@ const devStatus = d => d.self ? '本机'
   : !d.online ? `离线${d.lastSeen && !d.lastSeen.startsWith('0001') ? ' · ' + ago(d.lastSeen) : ''}`
   : d.linked ? `在线${d.rtt != null ? ' · <b class="num">' + Math.round(d.rtt) + '</b> ms' : ''}`
   : '在线 · 未接入互联服务';
+// 侧栏空间窄，用短一点的状态；完整状态在悬停提示和主页卡片里
+const devStatusShort = d => d.self ? '本机'
+  : !d.online ? `离线${d.lastSeen && !d.lastSeen.startsWith('0001') ? ' · ' + ago(d.lastSeen).replace(' ', '') : ''}`
+  : d.linked ? `在线${d.rtt != null ? ' · <b class="num">' + Math.round(d.rtt) + '</b> ms' : ''}`
+  : '在线 · 未接入';
 function ago(iso) {
   const s = (Date.now() - new Date(iso)) / 1000;
   return s < 3600 ? Math.max(1, Math.round(s / 60)) + ' 分钟前' : s < 86400 ? Math.round(s / 3600) + ' 小时前' : Math.round(s / 86400) + ' 天前';
@@ -113,7 +118,7 @@ async function loadDir(n, quiet) {
     const list = j.entries.map(e => {
       const c = node(n.dev, joinPath(n.path, e.name));
       Object.assign(c, { name: e.name, kind: e.type === 'dir' ? 'dir' : 'file', size: e.type === 'dir' ? undefined : e.size,
-        date: e.mtime ? fmtTime(e.mtime) : '', mtime: e.mtime, version: e.version, hidden: !!e.hidden, gone: false });
+        date: e.mtime ? fmtTime(e.mtime) : '', mtime: e.mtime, version: e.version, alloc: e.alloc, hidden: !!e.hidden, gone: false });
       return c;
     });
     const sig = j.entries.map(e => `${e.name}|${e.type}|${e.size}|${e.mtime}`).join('\n');
@@ -131,11 +136,15 @@ async function loadDir(n, quiet) {
 const reload = (...ns) => ns.filter(n => n && n.kind === 'dir').forEach(n => loadDir(n, true));
 
 // 设备的盘和常用位置（互联服务的 roots 操作）
+const WORKSPACE_PATH = 'E:/工作区';
+let WORKSPACE = null;
 async function loadRoots(d) {
   try {
     const info = await callFile(d.id, 'roots', {});
     INFO[d.id] = info;
-    const drives = info.drives.map(x => node(d.id, x.path, { name: x.label, drive: { total: x.total, free: x.free }, writable: x.writable }));
+    const drives = info.drives.map(x => node(d.id, x.path, { name: x.label, drive: { total: x.total, free: x.free, fs: x.fs || '' }, writable: x.writable }));
+    // 工作区不是每台电脑都有：只在本机真有这个文件夹时才放进收藏
+    if (d.self && info.platform === 'windows') WORKSPACE = await callFile(d.id, 'stat', { path: WORKSPACE_PATH }).then(s => s.exists && s.type === 'dir' ? WORKSPACE_PATH : null).catch(() => null);
     const share = info.places.find(p => p.name === '互传');
     ROOTS[d.id] = share ? [...drives, node(d.id, share.path, { shareRoot: true })] : drives;
   } catch (e) { if (!ROOTS[d.id]) ROOTS[d.id] = []; }
@@ -167,7 +176,7 @@ async function refreshDevices() {
     buildMerged();
     return before !== JSON.stringify(DEVS.map(d => [d.id, d.online, d.linked, d.rtt && Math.round(d.rtt / 10)]));
   } catch (e) {
-    if (!DEVS.length) { DEVS = [{ id: 'self', self: true, name: '本机', host: '', os: 'windows', online: true, linked: false }]; buildMerged(); }
+    if (!DEVS.length) { DEVS = [{ id: 'self', self: true, name: '本机', host: '', os: /Mac/.test(navigator.platform) ? 'macos' : 'windows', online: true, linked: false }]; buildMerged(); }
     return false;
   }
 }
@@ -246,6 +255,7 @@ function agentMark(n) {
   return `<span class="agentmark" title="${esc(AGENT_NAME[a.agent] || a.agent)} ${ago(new Date(a.time * 1000).toISOString())}${ACTION_NAME[a.action] || ''}了它">${esc(AGENT_NAME[a.agent] || a.agent)}</span>`;
 }
 
+// 颜色标签的界面已暂时撤下（待定，见 README"待定事项"）。下面的存储仍保留：已有的标签数据不丢，改名、移动时照样跟着走，改版时直接接上
 const TAGS = { red: ['红色', '#e5534b'], orange: ['橙色', '#e0823d'], yellow: ['黄色', '#d4a72c'], green: ['绿色', '#57ab5a'], blue: ['蓝色', '#539bf5'], purple: ['紫色', '#986ee2'], gray: ['灰色', '#8b8b8b'] };
 // 标签存在 App 自己的存储里（按 设备|路径），重启后还在；本页面里改名、移动时跟着走
 var TAGSTORE; try { TAGSTORE = JSON.parse(localStorage.getItem('unified.tags') || '{}'); } catch { TAGSTORE = {}; }
@@ -286,7 +296,7 @@ const sizeLabel = n => n.kind === 'dir' ? (n.unloaded ? '—' : kids(n).length +
 // ───────────────────────────────────────── 状态
 const state = {
   tabs: [{ hist: [{ t: 'home' }], i: 0 }], cur: 0, view: 'list', dev: 'all', sel: null, loading: false, renaming: null,
-  preview: true, sort: { key: 'name', dir: 1 }, homeTab: 'recent', q: '', clip: null,
+  preview: true, sort: { key: 'name', dir: 1 }, homeTab: 'recent', homeDev: null, q: '', clip: null,
   open: new Set(loadOpen()),   // 侧栏里展开着的设备分组
 };
 function loadOpen() { try { return JSON.parse(localStorage.getItem('unified.openDevices') || '[]'); } catch { return []; } }
@@ -299,7 +309,6 @@ function resolve(l) {
   if (l.t === 'home') return { title: '主页', icon: 'home', crumbs: [], items: [] };
   if (l.t === 'recent') return { title: '最近使用', icon: 'clock', crumbs: [], items: recent(), flat: true };
   if (l.t === 'merged') { const mg = MERGED[l.k]; return { title: mg.label, icon: mg.icon, crumbs: [], items: mg.nodes.flatMap(kids), merged: mg }; }
-  if (l.t === 'tag') return { title: TAGS[l.k][0], tag: l.k, crumbs: [], items: ALL.filter(n => !n.gone && n.tags.includes(l.k)), flat: true };
   if (l.t === 'dev') return { title: devName(l.k), dev: l.k, crumbs: [], items: roots(l.k) };
   if (l.t === 'stub') return { title: l.label, icon: l.icon, crumbs: [], items: [], stub: true };
   const n = byId(l.id);
@@ -324,11 +333,11 @@ function fileIcon(n, cls = '') {
   const e = ext(n), c = (EXT[e] || [])[1] || '#6b7280';
   return `<span class="fi file ${cls}" style="--c:${c}"><i>${esc(e.slice(0, 4)) || '·'}</i></span>`;
 }
-const tagDots = n => n.tags.map(t => `<b class="tagdot" style="--c:${TAGS[t][1]}" title="${TAGS[t][0]}"></b>`).join('');
 const devChip = d => `<span class="chip">${drop(d)}${esc(devName(d))}</span>`;
-const bar = (pct, c = '') => `<div class="seg ${c}" style="--p:${pct}%"></div>`;
+const WARN_USED = 80;   // 已用超过这个百分比，容量数字和进度条变成琥珀色
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const used = n => Math.round(100 - 100 * n.drive.free / n.drive.total);
+const warnCls = n => (used(n) > WARN_USED ? 'warn' : '');
 const nm = n => state.renaming === n.id ? `<input class="rename" value="${esc(n.name)}" data-rename="${n.id}">` : `<span class="nm">${esc(n.name)}</span>`;
 const rowCls = n => `${state.sel === n.id ? 'sel' : ''} ${state.clip && state.clip.mode === 'cut' && state.clip.id === n.id ? 'cut' : ''} ${Date.now() - (flash[nkey(n.dev, n.path)] || 0) < 2500 ? 'fresh' : ''}`;
 
@@ -336,7 +345,7 @@ const rowCls = n => `${state.sel === n.id ? 'sel' : ''} ${state.clip && state.cl
 function render() {
   const r = resolve(loc());
   renderToolbar(r); renderCmd(r); renderSidebar(); renderContent(r); renderPreview(); renderStatus(r);
-  document.getElementById('body').classList.toggle('nopreview', !state.preview);
+  document.getElementById('body').classList.toggle('nopreview', !state.preview || !state.sel);   // 详情面板只在选中文件时弹出
   const cols = document.querySelector('.cols');
   if (cols) cols.scrollLeft = cols.scrollWidth;
   const inp = document.querySelector('input.rename');
@@ -374,15 +383,44 @@ function renderCmd(r) {
     .map(([v, i, l]) => `<button class="${state.view === v ? 'on' : ''}" data-view="${v}" title="${l}">${ic(i)}</button>`).join('');
   const devs = `<button class="${state.dev === 'all' ? 'on' : ''}" data-dev="all">全部</button>` + browsable()
     .map(d => `<button class="${state.dev === d.id ? 'on' : ''}" data-dev="${d.id}">${drop(d.id)}${esc(devName(d.id))}</button>`).join('');
+  const snap = thumbSnapshot();
   document.getElementById('cmdbar').innerHTML = `
     <div class="grp">${b('plus', '新建文件夹', r.node && r.node.writable ? 'data-do="newfolder"' : 'disabled')}</div>
     <div class="grp icononly">${b('cut', '剪切', on('cut'))}${b('copy', '复制', on('copy'))}${b('paste', '粘贴', state.clip && r.node ? 'data-do="paste"' : 'disabled')}${b('rename', '重命名', on('rename'))}${b('share', '共享', on('send'))}${b('trash', '删除', on('delete'))}</div>
     <div class="grp">${b('sort', '排序')}${b('group', '分组')}${b('filter', '筛选')}</div>
     <div class="grp">${b('eye', '快速查看', on('look'))}${b('send', '发送到另一台', on('send'))}</div>
     <div class="grow"></div>
-    <div class="segctl">${devs}</div>
-    <div class="segctl icons">${views}</div>
+    <div class="segctl" data-seg="dev"><i class="seg-thumb"></i>${devs}</div>
+    <div class="segctl icons" data-seg="view"><i class="seg-thumb"></i>${views}</div>
     <button class="toggle ${state.preview ? 'on' : ''}" data-act="preview" title="详情面板">${ic('panel')}</button>`;
+  placeThumbs(snap);
+}
+// 分段切换（设备、视图）的白色滑块：工具栏每次重绘都是新元素。重绘前先记下滑块此刻在屏幕上的位置
+// （正在滑动时就是滑到一半的位置），新滑块先放在那里，下一帧再移到新选中的按钮上，由 CSS 过渡平滑滑过去
+function thumbSnapshot() {
+  const snap = {};
+  document.querySelectorAll('#cmdbar .segctl').forEach(el => {
+    const t = el.querySelector('.seg-thumb'); if (!t || t.style.opacity === '0') return;
+    const a = el.getBoundingClientRect(), b = t.getBoundingClientRect();
+    snap[el.dataset.seg] = { x: b.left - a.left - el.clientLeft, w: b.width };
+  });
+  return snap;
+}
+function placeThumbs(snap = {}) {
+  document.querySelectorAll('#cmdbar .segctl').forEach(el => {
+    const t = el.querySelector('.seg-thumb'), on = el.querySelector('button.on');
+    if (!on) { t.style.opacity = '0'; return; }
+    const put = (x, w) => { t.style.transform = `translateX(${x}px)`; t.style.width = w + 'px'; };
+    const from = snap[el.dataset.seg], to = { x: on.offsetLeft, w: on.offsetWidth };
+    t.classList.add('still');
+    if (from && (Math.abs(from.x - to.x) > .5 || Math.abs(from.w - to.w) > .5)) {
+      put(from.x, from.w);
+      void t.offsetWidth;   // 让旧位置先生效
+      t.classList.remove('still');
+    }
+    put(to.x, to.w);
+    if (t.classList.contains('still')) { void t.offsetWidth; t.classList.remove('still'); }
+  });
 }
 
 function renderSidebar() {
@@ -391,34 +429,31 @@ function renderSidebar() {
     `<button class="srow ${same(go) ? 'on' : ''}" data-go='${JSON.stringify(go)}' ${dropId}>${icon}<span>${label}</span>${right}</button>`;
   const two = mg => `<span class="both">${mg.nodes.map(n => drop(n.dev)).join('')}</span>`;
   const one = d => `<span class="both">${drop(d)}</span>`;
-  const drive = n => `<button class="srow drive ${same({ t: 'node', id: n.id }) ? 'on' : ''}" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">${ic('drive')}<span>${esc(n.name)}</span><small class="num">${big(n.drive.free)}</small>${bar(used(n), 'thin')}</button>`;
-  const stub = (label, icon, d) => row({ t: 'stub', label, icon }, ic(icon), label, one(d));
+  const drive = n => `<button class="srow drive ${same({ t: 'node', id: n.id }) ? 'on' : ''}" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">${ic('drive')}<span>${esc(n.name)}</span></button>`;   // 容量只在主页的设备栏里显示，侧栏不重复
   const folder = n => `<button class="srow ${same({ t: 'node', id: n.id }) ? 'on' : ''}" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">${fileIcon(n)}<span>${esc(n.name)}</span><small>共享目录</small></button>`;
   // 每台设备一个可展开的分组：点标题展开它的磁盘 / 共享目录，再点一下收起
-  const EXTRAS = { windows: [['图库', 'image'], ['OneDrive', 'cloud'], ['WPS云盘', 'cloud'], ['网络', 'network'], ['Linux', 'terminal']], macos: [['iCloud云盘', 'cloud'], ['隔空投送', 'airdrop'], ['共享', 'users']] };
   const devGroup = d => {
+    const tip = `${esc(devName(d.id))}（${esc(d.host)}）· ${esc(devStatus(d).replace(/<[^>]+>/g, ''))}`;
+    // 离线设备没有可看的东西：不能展开，只显示名字和状态
+    if (!d.online) return `<div class="devhead offline" title="${tip}">${ic('chev', 'caret none')}${drop(d.id)}<span>${esc(devName(d.id))}</span><em>${devStatusShort(d)}</em></div>`;
     const open = state.open.has(d.id), rs = roots(d.id);
     const body = rs.map(n => n.drive ? drive(n) : folder(n)).join('')
-      + (d.self ? (EXTRAS[d.os] || []).map(([l, i]) => stub(l, i, d.id)).join('') : '')
-      + (!rs.length ? `<div class="srow note">${d.online ? '没有装互联服务，看不到它的文件' : '离线，连上后才能看到文件'}</div>` : '');
-    return `<button class="devhead ${open ? 'open' : ''} ${d.online ? '' : 'offline'}" data-toggledev="${d.id}" title="${esc(d.host)}">
-        ${ic('chev', 'caret')}${drop(d.id)}<span>${esc(devName(d.id))}</span><em>${devStatus(d)}</em></button>
+      + (!rs.length ? `<div class="srow note">没有装互联服务，看不到它的文件</div>` : '');
+    return `<button class="devhead ${open ? 'open' : ''}" data-toggledev="${d.id}" title="${tip}">
+        ${ic('chev', 'caret')}${drop(d.id)}<span>${esc(devName(d.id))}</span><em>${devStatusShort(d)}</em></button>
       <div class="devbody ${open ? 'open' : ''}"><div>${body}</div></div>`;
   };
-  const work = SELF().os === 'windows' && INFO[SELF().id] ? node(SELF().id, 'E:/工作区') : null;
+  const work = WORKSPACE && INFO[SELF().id] ? node(SELF().id, WORKSPACE) : null;
   const mergedRows = ['desktop', 'docs', 'dl', 'pics', 'video', 'music'].filter(k => MERGED[k].nodes.length)
     .map(k => row({ t: 'merged', k }, ic(MERGED[k].icon), MERGED[k].label, two(MERGED[k]), `data-dropmerged="${k}"`)).join('');
   document.getElementById('sidebar').innerHTML = `
     ${row({ t: 'home' }, ic('home'), '主页')}
-    ${row({ t: 'recent' }, ic('clock'), '最近使用', `<span class="both">${browsable().map(d => drop(d.id)).join('')}</span>`)}
     ${row({ t: 'merged', k: 'share' }, ic('swap'), '互传', two(MERGED.share), 'data-dropmerged="share"')}
     <h6>收藏</h6>
     ${mergedRows}
     ${work ? row({ t: 'node', id: work.id }, ic('folder'), '工作区', one(work.dev), `data-dropnode="${work.id}"`) : ''}
     <h6>设备<em class="num">${DEVS.filter(d => d.online).length}/${DEVS.length} 在线</em></h6>
-    ${DEVS.map(devGroup).join('')}
-    <h6>标签</h6>
-    <div class="tagrow">${Object.entries(TAGS).map(([k, [n, c]]) => `<button class="tagbtn ${same({ t: 'tag', k }) ? 'on' : ''}" data-go='{"t":"tag","k":"${k}"}' style="--c:${c}" title="${n}"></button>`).join('')}</div>`;
+    ${DEVS.map(devGroup).join('')}`;
 }
 
 const emptyHTML = (icon, title, sub = '') => `<div class="empty">${ic(icon)}<p>${title}</p>${sub ? `<small>${sub}</small>` : ''}</div>`;
@@ -439,17 +474,17 @@ function renderContent(r) {
   if (state.view === 'column') { el.innerHTML = columnHTML(r, items); return; }
   if (!items.length) { el.innerHTML = emptyHTML('folder', state.q ? '没有匹配的项目' : '这里是空的'); return; }
   if (state.view === 'list') el.innerHTML = tableHTML(items, r.flat || r.merged);
-  else if (state.view === 'icon') el.innerHTML = `<div class="grid">${items.map(n => `<div class="tile ${rowCls(n)}" data-id="${n.id}">${fileIcon(n, 'big')}${nm(n)}<span class="sub">${drop(n.dev)}${tagDots(n)}</span></div>`).join('')}</div>`;
+  else if (state.view === 'icon') el.innerHTML = `<div class="grid">${items.map(n => `<div class="tile ${rowCls(n)}" data-id="${n.id}">${fileIcon(n, 'big')}${nm(n)}<span class="sub">${drop(n.dev)}</span></div>`).join('')}</div>`;
   else el.innerHTML = galleryHTML(items);
 }
 
 function tableHTML(items, showWhere) {
   const th = (key, label, cls = '') => `<th class="${cls} ${state.sort.key === key ? 'sorted' : ''}" data-sort="${key}">${label}${state.sort.key === key ? (state.sort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>`;
-  return `<table class="tbl"><thead><tr>${th('name', '名称')}${th('dev', '设备', 'c-dev')}${th('date', '修改日期', 'c-date')}${th('type', '类型', 'c-type')}${th('size', '大小', 'c-size')}<th class="c-tag">标签</th></tr></thead><tbody>
+  return `<table class="tbl"><thead><tr>${th('name', '名称')}${th('dev', '设备', 'c-dev')}${th('date', '修改日期', 'c-date')}${th('type', '类型', 'c-type')}${th('size', '大小', 'c-size')}</tr></thead><tbody>
     ${items.map(n => `<tr class="${rowCls(n)}" data-id="${n.id}">
       <td><div class="namecell">${fileIcon(n)}${nm(n)}${agentMark(n)}${showWhere && n.parent ? `<span class="where">${esc(pathText(n.parent))}</span>` : ''}</div></td>
       <td class="c-dev">${devChip(n.dev)}</td><td class="c-date num">${n.date || '—'}</td><td class="c-type">${typeOf(n)}</td>
-      <td class="c-size num">${n.drive ? big(n.drive.total) : sizeLabel(n)}</td><td class="c-tag">${tagDots(n)}</td></tr>`).join('')}
+      <td class="c-size num">${n.drive ? big(n.drive.total) : sizeLabel(n)}</td></tr>`).join('')}
   </tbody></table>`;
 }
 
@@ -471,31 +506,33 @@ function galleryHTML(items) {
 }
 
 function homeHTML() {
-  const box = n => n.drive
-    ? `<button class="drivebox" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">
-        <span class="lbl">${esc(n.name)}</span><span class="big num">${100 - used(n)}<small>% 可用</small></span>${bar(used(n))}
-        <span class="foot">可用 <b class="num">${big(n.drive.free)}</b> / ${big(n.drive.total)}</span></button>`
-    : `<button class="drivebox" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">
-        <span class="lbl">共享目录 · ${esc(pathText(n))}</span><span class="big num">${n.unloaded ? '—' : kids(n).length}<small>项</small></span>
-        <span class="foot">经 Tailscale 长连接实时读取</span></button>`;
-  const devCard = d => `<section class="card os-${osCls(d.id)} ${d.online ? '' : 'offline'}">
-      <header><div class="ttl">${drop(d.id, 'lg')}<b>${esc(devName(d.id))}</b><span class="badge">${esc(d.host)}</span></div><span class="meta">${devStatus(d)}</span></header>
-      ${roots(d.id).length ? `<div class="drives">${roots(d.id).map(box).join('')}</div>`
-        : `<p class="cardnote">${d.online ? '这台设备在 Tailscale 里，但没有装互联服务，暂时看不到它的文件' : '这台设备现在离线'}</p>`}</section>`;
+  // 设备栏：左边列出所有设备（来自 Tailscale），右边是选中设备的分区容量和共享目录，独立滚动
+  const hd = DEVS.find(d => d.id === state.homeDev) || SELF();
+  const dot = d => `<i class="dot ${d.self ? 'self' : !d.online ? 'off' : d.linked ? 'on' : 'idle'}"></i>`;
+  const devRow = d => `<button class="dl-row ${d.id === hd.id ? 'on' : ''} ${d.online ? '' : 'offline'}" data-homedev="${d.id}" title="${esc(devName(d.id))}（${esc(d.host)}）">
+      ${drop(d.id, 'lg')}<span class="dl-txt"><b>${esc(devName(d.id))}</b><small>${dot(d)}${devStatusShort(d)}</small></span></button>`;
+  const rs = roots(hd.id), drives = rs.filter(n => n.drive), shares = rs.filter(n => !n.drive);
+  const part = n => `<button class="part" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">
+      <span class="pt-top"><span class="pt-name">${esc(n.name)}</span><span class="pt-pct ${warnCls(n)}"><b class="num">${used(n)}%</b> 已用</span></span>
+      <span class="pt-bar ${warnCls(n)}" style="--p:${used(n)}%"></span>
+      <span class="pt-foot num">${big(n.drive.total - n.drive.free)} / ${big(n.drive.total)}<em>可用 ${big(n.drive.free)}${n.drive.fs ? ' · ' + esc(n.drive.fs) : ''}</em></span></button>`;
+  const shareRow = n => `<button class="shr" data-go='{"t":"node","id":${n.id}}' data-dropnode="${n.id}">${ic('folder')}<span>${esc(pathText(n))}</span><em class="num">${n.unloaded ? '—' : kids(n).length + ' 项'}</em></button>`;
+  const detail = `<div class="dd-head"><div><b>${esc(devName(hd.id))}</b><small>${esc(hd.host)}</small></div><span class="dd-st">${dot(hd)}${devStatus(hd)}</span></div>
+    ${rs.length ? `${drives.length ? `<h5>分区 · <span class="num">${drives.length}</span></h5>${drives.map(part).join('')}` : ''}
+      ${shares.length ? `<h5>共享目录 · <span class="num">${shares.length}</span></h5>${shares.map(shareRow).join('')}` : ''}`
+      : `<p class="dd-note">${hd.online ? '这台设备在 Tailscale 里，但没有装互联服务，暂时看不到它的文件和容量' : '这台设备现在离线，连上后才能看到它的文件和容量'}</p>`}`;
   for (const d of DEVS) for (const n of roots(d.id)) if (n.shareRoot && n.unloaded && !n.loadingDir && !n.loadError) loadDir(n);   // 主页显示共享目录的项目数
   const rc = recent().filter(n => state.dev === 'all' || n.dev === state.dev);
   const rec = rc.slice(0, 4).map(n => `<div class="reccard ${rowCls(n)}" data-id="${n.id}"><span class="why">最近修改<em class="num">${n.date.slice(5)}</em></span>${fileIcon(n, 'big')}<span class="nm">${esc(n.name)}</span><span class="where">${drop(n.dev)}${esc(pathText(n.parent))}</span></div>`).join('');
-  const lists = { recent: rc, fav: ALL.filter(n => !n.gone && n.tags.length), shared: MERGED.share.nodes.flatMap(kids) };
+  const lists = { recent: rc, shared: MERGED.share.nodes.flatMap(kids) };
   const items = lists[state.homeTab].filter(n => state.dev === 'all' || n.dev === state.dev);
-  const pills = [['recent', 'clock', '最近使用'], ['fav', 'star', '已加标签'], ['shared', 'swap', '互传']]
+  const pills = [['recent', 'clock', '最近使用'], ['shared', 'swap', '互传']]
     .map(([k, i, l]) => `<button class="pill ${state.homeTab === k ? 'on' : ''}" data-hometab="${k}">${ic(i)}${l}</button>`).join('');
-  const main = DEVS.filter(d => roots(d.id).length), rest = DEVS.filter(d => !roots(d.id).length);
   return `<div class="sec"><span>设备</span><i></i><em>来自 Tailscale 已授权的设备 · 新设备加入后会自动出现</em></div>
-    <div class="devgrid">${main.map(devCard).join('')}</div>
-    ${rest.length ? `<div class="devgrid small">${rest.map(devCard).join('')}</div>` : ''}
+    <div class="devpanel"><div class="dl">${DEVS.map(devRow).join('')}</div><div class="dd">${detail}</div></div>
     <div class="sec"><span>最近</span><i></i></div><div class="recgrid">${rec}</div>
     <div class="sec"><span class="pills">${pills}</span><i></i><em class="num">${items.length} 项</em></div>
-    ${items.length ? tableHTML(items, true) : emptyHTML('tag', '还没有项目')}`;
+    ${items.length ? tableHTML(items, true) : emptyHTML('folder', '还没有项目')}`;
 }
 
 // 右侧详情面板：单击文件后显示属性。跨设备读取有延迟，所以先播放加载动画
@@ -503,7 +540,7 @@ let lastPv = null;
 function renderPreview() {
   const el = document.getElementById('preview');
   const n = state.sel && byId(state.sel);
-  if (!n) { lastPv = null; el.innerHTML = `<div class="pv-empty">${GOO('big')}<p>单击文件查看详情</p><small>右键打开操作轮盘 · 长按拖动</small></div>`; return; }
+  if (!n) { lastPv = null; el.innerHTML = ''; return; }   // 没选中时面板收起，不占地方
   if (state.loading) {
     el.innerHTML = `<div class="pv-load">${GOO('big busy')}<p>正在从 ${esc(devName(n.dev))} 读取属性…</p><div class="sk"></div><div class="sk s2"></div><div class="sk s3"></div><div class="sk"></div><div class="sk s2"></div></div>`;
     return;
@@ -511,10 +548,10 @@ function renderPreview() {
   const fresh = n.id !== lastPv; lastPv = n.id;
   const kv = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
   const sec = t => `<div class="sec small"><span>${t}</span><i></i></div>`;
-  const disk = n.size != null ? fmtSize(Math.ceil(n.size / 4096) * 4096) : '—';
+  
   const general = n.drive
-    ? kv('类型', '磁盘') + kv('总容量', big(n.drive.total)) + kv('可用空间', big(n.drive.free)) + kv('已用', used(n) + '%') + kv('文件系统', osCls(n.dev) === 'win' ? 'NTFS' : 'APFS')
-    : kv('类型', typeOf(n)) + kv('位置', esc(n.parent ? pathText(n.parent) : pathText(n))) + (n.kind === 'dir' ? kv('包含', sizeLabel(n)) : kv('大小', `<span class="num">${fmtSize(n.size)}</span>`) + kv('占用空间', `<span class="num">${disk}</span>`));
+    ? kv('类型', '磁盘') + kv('总容量', big(n.drive.total)) + kv('可用空间', big(n.drive.free)) + kv('已用', used(n) + '%') + kv('文件系统', esc(n.drive.fs || '—'))
+    : kv('类型', typeOf(n)) + kv('位置', esc(n.parent ? pathText(n.parent) : pathText(n))) + (n.kind === 'dir' ? kv('包含', sizeLabel(n)) : kv('大小', `<span class="num">${fmtSize(n.size)}</span>`) + (n.alloc != null ? kv('占用空间', `<span class="num">${fmtSize(n.alloc)}</span>`) : ''));
   const ro = n.drive ? !n.writable : !(n.parent && n.parent.writable);
   const ag = agentOf(n);
   const attrs = kv('可以修改', ro ? '否（只读区域）' : '是') + kv('隐藏', n.hidden ? '是' : '否')
@@ -530,7 +567,6 @@ function renderPreview() {
     ${n.drive ? '' : sec('时间') + kv('修改时间', `<span class="num">${n.date || '—'}</span>`)}
     ${sec('属性')}${attrs}
     ${sec('所在设备')}${kv('设备', `${esc(devName(n.dev))} · ${esc(D(n.dev).host)}`)}${kv('来源', D(n.dev).self ? '经本机互联服务实时读取' : '经 Tailscale 长连接实时读取')}${kv('完整路径', esc(pathText(n)))}
-    ${n.drive ? '' : sec('标签') + `<div class="tagrow">${Object.entries(TAGS).map(([k, [name, c]]) => `<button class="tagbtn ${n.tags.includes(k) ? 'on' : ''}" data-toggletag="${k}" style="--c:${c}" title="${name}"></button>`).join('')}</div>`}
   </div>`;
 }
 
@@ -631,7 +667,7 @@ async function select(id) {
   try {
     if (!n.drive) {
       const s = await callFile(n.dev, 'stat', { path: n.path });
-      if (s.exists) Object.assign(n, { size: s.type === 'dir' ? undefined : s.size, date: s.mtime ? fmtTime(s.mtime) : n.date, version: s.version, hidden: !!s.hidden });
+      if (s.exists) Object.assign(n, { size: s.type === 'dir' ? undefined : s.size, alloc: s.alloc, date: s.mtime ? fmtTime(s.mtime) : n.date, version: s.version, hidden: !!s.hidden });
     }
   } catch {}
   await new Promise(r => setTimeout(r, Math.max(0, 280 - (Date.now() - t0))));   // 太快时也让加载动画播完一小段
@@ -821,7 +857,7 @@ document.addEventListener('click', e => {
   if (wp) { const n = wheel.n; closeWheel(); if (!wp.classList.contains('off')) act(wp.dataset.wheel, n); return; }
   if (wheel) { if (!e.target.closest('#wheel')) closeWheel(); return; }
   if (e.target.closest('input.rename')) return;
-  const t = e.target.closest('[data-toggledev],[data-retry],[data-go],[data-act],[data-do],[data-view],[data-dev],[data-sort],[data-hometab],[data-toggletag],[data-id]');
+  const t = e.target.closest('[data-toggledev],[data-retry],[data-go],[data-act],[data-do],[data-view],[data-dev],[data-sort],[data-hometab],[data-homedev],[data-id]');
   if (!t) { if (e.target.closest('#content') && state.sel) { state.sel = null; render(); } return; }
   const d = t.dataset;
   if (d.toggledev) { state.open.has(d.toggledev) ? state.open.delete(d.toggledev) : state.open.add(d.toggledev); saveOpen(); return renderSidebar(); }
@@ -833,8 +869,8 @@ document.addEventListener('click', e => {
   if (d.view) { state.view = d.view; return render(); }
   if (d.dev) { state.dev = d.dev; return render(); }
   if (d.hometab) { state.homeTab = d.hometab; return render(); }
+  if (d.homedev) { state.homeDev = d.homedev; return renderContent(resolve(loc())); }
   if (d.sort) { state.sort = { key: d.sort, dir: state.sort.key === d.sort ? -state.sort.dir : 1 }; return render(); }
-  if (d.toggletag) { const n = byId(state.sel); n.tags = n.tags.includes(d.toggletag) ? n.tags.filter(x => x !== d.toggletag) : [...n.tags, d.toggletag]; saveTags(n); return render(); }
   if (d.act) {
     const tb = tab();
     if (d.act === 'back' && tb.i) tb.i--;
@@ -900,8 +936,8 @@ document.addEventListener('keydown', e => {
   if (navigator.userAgent.includes('Electron')) document.body.classList.add('app');
   if (/Mac/.test(navigator.platform)) document.body.classList.add('mac');
   await refreshDevices();
-  for (const v of Object.values(TAGSTORE)) if (DEVS.some(d => d.id === v.dev)) node(v.dev, v.path, { kind: v.kind });   // 带标签的项目先建好，"标签"里重启后也能看到
   render();
+  if (document.fonts) document.fonts.ready.then(() => placeThumbs(thumbSnapshot()));   // 字体加载完按钮宽度会变，滑块重新对齐
   // 先读各台设备的常用文件夹，主页的"最近"才有内容
   for (const k of ['desktop', 'docs', 'dl', 'share']) (MERGED[k] ? MERGED[k].nodes : []).forEach(n => loadDir(n, true));
   refreshActivity().then(softRender);

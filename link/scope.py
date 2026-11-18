@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import shutil
 import string
+import subprocess
 import sys
 from pathlib import Path
 
@@ -100,7 +101,7 @@ class Scope:
                 usage = {"total": u.total, "free": u.free}
             except OSError:
                 usage = {}
-            drives.append({"path": posix(r), "label": _drive_label(r), "writable": self.can_write(r), **usage})
+            drives.append({"path": posix(r), "label": _drive_label(r), "fs": _drive_fs(r), "writable": self.can_write(r), **usage})
         places = [{"name": "互传", "path": posix(share)}]
         for name, p in _special_folders():
             if p and Path(p).exists() and self.visible(Path(p)):
@@ -124,8 +125,49 @@ def _drive_label(p: Path) -> str:
         name = buf.value if ok else ""
         return f"{name} ({root[:2]})" if name else root[:2]
     if str(p) == "/":
-        return "Macintosh HD"
+        # 启动盘的名字由用户决定（默认叫 Macintosh HD），/Volumes 里指向 / 的那一项就是它
+        try:
+            for v in Path("/Volumes").iterdir():
+                if os.path.realpath(v) == "/":
+                    return v.name
+        except OSError:
+            pass
+        return "启动盘"
     return p.name
+
+
+def _drive_fs(p: Path) -> str:
+    """盘的文件系统（NTFS、exFAT、APFS……），读不到就返回空字符串。"""
+    if sys.platform == "win32":
+        import ctypes
+        fs = ctypes.create_unicode_buffer(261)
+        root = str(p).rstrip("\\/") + "\\"
+        ok = ctypes.windll.kernel32.GetVolumeInformationW(root, None, 0, None, None, None, fs, 261)
+        return fs.value if ok else ""
+    try:
+        out = subprocess.run(["/sbin/mount"], capture_output=True, text=True, timeout=3).stdout
+        for line in out.splitlines():   # 形如：/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+            if f" on {p} (" in line:
+                return line.split(" (", 1)[1].split(",", 1)[0].strip().upper()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return ""
+
+
+_CLUSTER: dict = {}
+
+
+def cluster_size(p: Path) -> int:
+    """Windows 上文件所在盘的簇大小（字节），用来算"占用空间"；读不到返回 0。"""
+    drive = p.drive.upper()
+    if sys.platform != "win32" or not drive:
+        return 0
+    if drive not in _CLUSTER:
+        import ctypes
+        spc, bps, free, total = (ctypes.c_ulong() for _ in range(4))
+        ok = ctypes.windll.kernel32.GetDiskFreeSpaceW(drive + "\\", ctypes.byref(spc), ctypes.byref(bps), ctypes.byref(free), ctypes.byref(total))
+        _CLUSTER[drive] = spc.value * bps.value if ok else 0
+    return _CLUSTER[drive]
 
 
 def _special_folders():
