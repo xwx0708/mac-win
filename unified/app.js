@@ -636,7 +636,7 @@ function toast(msg, undo) {
   el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), undo ? 5000 : 2400);
 }
 
-// ───────────────────────────────────────── 打开（双击 / 回车 / 轮盘里的"打开"）
+// ───────────────────────────────────────── 打开（双击 / 轮盘里的"打开"）
 // 文件夹：进入。Windows 上的文件：交给本地页面服务，用默认程序打开，和资源管理器双击一样。
 function launchFx(n) {
   document.querySelectorAll(`[data-id="${n.id}"]`).forEach(el => { el.classList.remove('launch'); void el.offsetWidth; el.classList.add('launch'); });
@@ -925,7 +925,6 @@ document.addEventListener('keydown', e => {
   if (n && e.key === ' ') { e.preventDefault(); return act('look', n); }
   if (n && e.key === 'F2') act('rename', n);
   if (n && e.key === 'Delete') act('delete', n);
-  if (n && e.key === 'Enter') act('open', n);
   if (e.altKey && e.key === 'ArrowLeft') document.querySelector('[data-act=back]').click();
   if (e.altKey && e.key === 'ArrowRight') document.querySelector('[data-act=fwd]').click();
 });

@@ -1,11 +1,10 @@
-// 零依赖静态服务器 + 文件变动自动刷新
+// 统一文件页的页面服务（零依赖）：提供页面文件和 /__ 开头的接口
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 5511;
-const IGNORE = ['.edge-profile', '.git', 'node_modules'];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -21,31 +20,6 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
 };
-
-const RELOAD_SNIPPET = `
-<script>
-(() => {
-  const connect = () => {
-    const es = new EventSource('/__reload');
-    es.onmessage = (e) => {
-      const file = e.data;
-      if (file.endsWith('.css')) {
-        document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
-          const url = new URL(link.href);
-          url.searchParams.set('t', Date.now());
-          link.href = url.toString();
-        });
-      } else {
-        location.reload();
-      }
-    };
-    es.onerror = () => { es.close(); setTimeout(connect, 1000); };
-  };
-  connect();
-})();
-</script>`;
-
-const clients = new Set();
 
 // 打开本机文件不走 HTTP：由 App 主进程（main.js）经 IPC 处理，只接受本 App 窗口的请求。
 
@@ -395,18 +369,6 @@ const server = http.createServer((req, res) => {
   if (urlPath === '/__activity')return api(res, () => activity(url.searchParams.get('dev') || ''));
   if (urlPath === '/__events') return events(res, url.searchParams.toString());
 
-  if (urlPath === '/__reload') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    res.write(': connected\n\n');
-    clients.add(res);
-    req.on('close', () => clients.delete(res));
-    return;
-  }
-
   let filePath = path.join(ROOT, urlPath === '/' ? 'index.html' : urlPath);
   const rel = path.relative(ROOT, filePath);
   if (rel.startsWith('..') || path.isAbsolute(rel) || /(^|[\\/])(node_modules|\.edge-profile)([\\/]|$)/.test(rel)) {
@@ -424,29 +386,8 @@ const server = http.createServer((req, res) => {
     }
     const ext = path.extname(filePath).toLowerCase();
     const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'no-store' };
-    if (ext === '.html') {
-      let html = data.toString('utf8');
-      html = html.includes('</body>') ? html.replace('</body>', RELOAD_SNIPPET + '\n</body>') : html + RELOAD_SNIPPET;
-      res.writeHead(200, headers).end(html);
-    } else {
-      res.writeHead(200, headers).end(data);
-    }
+    res.writeHead(200, headers).end(data);
   });
 });
 
-let timer = null;
-let lastFile = '';
-fs.watch(ROOT, { recursive: true }, (_event, filename) => {
-  if (!filename) return;
-  const rel = filename.replace(/\\/g, '/');
-  if (IGNORE.some((dir) => rel === dir || rel.startsWith(dir + '/'))) return;
-  if (rel === 'server.js') return;
-  lastFile = rel;
-  clearTimeout(timer);
-  timer = setTimeout(() => {
-    for (const client of clients) client.write(`data: ${lastFile}\n\n`);
-    console.log(`[reload] ${lastFile} -> ${clients.size} client(s)`);
-  }, 100);
-});
-
-server.listen(PORT, '127.0.0.1', () => console.log(`Live Canvas: http://localhost:${PORT}`));
+server.listen(PORT, '127.0.0.1', () => console.log(`统一文件页：http://localhost:${PORT}`));

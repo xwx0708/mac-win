@@ -1,6 +1,5 @@
 ﻿# 把统一文件页的代码更新到 Mac（~/macwin-unified），走互联服务，不用 SSH。
-# 只传内容变了的文件。页面文件（app.js / style.css / index.html）传过去后 Mac 上的页面自己刷新；
-# server.js / main.js / preload.js 变了，Mac 上的 App 会自己重启一次。
+# 只传内容变了的文件。传完后要在 Mac 上退出 App 再打开才生效（页面不会自己刷新，App 也不会自己重启）。
 # 用法：powershell -File deploy-mac.ps1
 $ErrorActionPreference = 'Stop'
 $env:PYTHONIOENCODING = 'utf-8'

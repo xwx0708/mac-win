@@ -24,19 +24,6 @@ const alive = () => new Promise((resolve) => {
   req.on('error', () => resolve(false)); req.on('timeout', () => { req.destroy(); resolve(false); });
 });
 
-// 页面服务和主进程的代码改了，App 自己重启一次（页面文件改了不用，页面会自己刷新）
-function restartOnChange() {
-  let t = null;
-  for (const f of ['server.js', 'main.js', 'preload.js']) {
-    try {
-      fs.watch(path.join(__dirname, f), () => {
-        clearTimeout(t);
-        t = setTimeout(() => { app.relaunch(); app.exit(0); }, 1500);   // 等文件写完
-      });
-    } catch {}
-  }
-}
-
 // ── 开屏动画（splash.html）
 // 一个透明、无边框、盖住目标屏幕工作区的窗口：鼠标点击会穿过它，它不抢焦点，也不出现在任务栏。
 // 主窗口准备好后让液滴展开成铺满的黑色，再把同样是黑底的主窗口显示出来，关掉开屏窗口。
@@ -72,7 +59,7 @@ async function createWindow() {
   const { x, y, width, height } = target.workArea;
   if (!SELFTEST && !SNAPSHOT) splash = createSplash(target);   // 先出开屏，再启动页面服务
 
-  if (!(await alive())) { require('./server.js'); if (!SELFTEST) restartOnChange(); }
+  if (!(await alive())) require('./server.js');
   for (let i = 0; i < 20 && !(await alive()); i++) await new Promise((r) => setTimeout(r, 150));
 
   win = new BrowserWindow({
