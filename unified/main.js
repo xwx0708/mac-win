@@ -37,15 +37,43 @@ function restartOnChange() {
   }
 }
 
+// ── 开屏动画（splash.html）
+// 一个透明、无边框、盖住目标屏幕工作区的窗口：鼠标点击会穿过它，它不抢焦点，也不出现在任务栏。
+// 主窗口准备好后让液滴展开成铺满的黑色，再把同样是黑底的主窗口显示出来，关掉开屏窗口。
+const SPLASH_TIMEOUT = 6000;   // 开屏最多等这么久；动画出了问题也不会挡住主窗口
+let splash = null;
+function createSplash(display) {
+  const s = new BrowserWindow({
+    ...display.workArea, show: false, frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    focusable: false, skipTaskbar: true, alwaysOnTop: true,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  s.setIgnoreMouseEvents(true);
+  s.once('ready-to-show', () => s.showInactive());
+  s.on('closed', () => { if (splash === s) splash = null; });
+  s.loadFile(path.join(__dirname, 'splash.html'));
+  return s;
+}
+// 等液滴展开成铺满的黑色（最早也要等液滴成形）；开屏窗口没了、页面坏了或超时都直接放行
+function splashCovered() {
+  if (!splash || splash.isDestroyed()) return Promise.resolve();
+  return Promise.race([
+    splash.webContents.executeJavaScript('window.splash.finish()').catch(() => {}),
+    new Promise((r) => setTimeout(r, SPLASH_TIMEOUT)),
+  ]);
+}
+
 let win = null;
 async function createWindow() {
-  if (!(await alive())) { require('./server.js'); if (!SELFTEST) restartOnChange(); }
-  for (let i = 0; i < 20 && !(await alive()); i++) await new Promise((r) => setTimeout(r, 150));
-
   // 有副屏就开在副屏上，没有就开在主屏
   const displays = screen.getAllDisplays();
   const target = displays.find((d) => d.id !== screen.getPrimaryDisplay().id) || screen.getPrimaryDisplay();
   const { x, y, width, height } = target.workArea;
+  if (!SELFTEST && !SNAPSHOT) splash = createSplash(target);   // 先出开屏，再启动页面服务
+
+  if (!(await alive())) { require('./server.js'); if (!SELFTEST) restartOnChange(); }
+  for (let i = 0; i < 20 && !(await alive()); i++) await new Promise((r) => setTimeout(r, 150));
 
   win = new BrowserWindow({
     x: x + 40, y: y + 40, width: Math.min(1360, width - 80), height: Math.min(860, height - 80),
@@ -61,7 +89,16 @@ async function createWindow() {
   // Windows 任务栏按 程序身份 分组、取图标：不设的话显示 electron.exe 的原子图标
   if (!IS_MAC) win.setAppDetails({ appId: 'MacWin.UnifiedFiles', appIconPath: path.join(__dirname, 'icon.ico'), appIconIndex: 0,
     relaunchCommand: `"${process.execPath}" "${__dirname}"`, relaunchDisplayName: '统一文件页' });
-  win.once('ready-to-show', () => { win.maximize(); win.show(); });
+  win.once('ready-to-show', async () => {
+    const hadSplash = !!splash;
+    await splashCovered();
+    if (!win) return;
+    win.maximize(); win.show();
+    if (!hadSplash) return;
+    // 主窗口在隐藏时已经把"从黑里浮出来"的入场动画放完了，这里重放一次，接在开屏的黑色后面
+    win.webContents.executeJavaScript(`(() => { const a = document.getElementById('app'); if (a) { a.style.animation = 'none'; void a.offsetWidth; a.style.animation = ''; } })()`).catch(() => {});
+    setTimeout(() => { if (splash && !splash.isDestroyed()) splash.destroy(); }, 150);   // 等主窗口画出第一帧再撤，中间不露桌面
+  });
 
   // 页面里的链接一律不在 App 里开新窗口；外部网址交给系统浏览器
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -70,7 +107,7 @@ async function createWindow() {
   });
   win.webContents.on('will-navigate', (e, url) => { if (!url.startsWith(URL)) e.preventDefault(); });
   win.loadURL(URL);
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { win = null; if (splash && !splash.isDestroyed()) splash.destroy(); });
 
   if (SNAPSHOT) win.webContents.once('did-finish-load', async () => {
     await new Promise((r) => setTimeout(r, 6000));

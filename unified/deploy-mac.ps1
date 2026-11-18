@@ -7,7 +7,7 @@ $env:PYTHONIOENCODING = 'utf-8'
 $here = $PSScriptRoot
 $link = Join-Path (Split-Path $here) 'link\macwin_link.py'
 $dest = '/Users/wx/macwin-unified'
-$files = 'app.js', 'index.html', 'style.css', 'icon.png', 'icon.svg', 'preload.js', 'main.js', 'server.js', 'package.json', 'package-lock.json', 'mac-app.sh'
+$files = 'app.js', 'index.html', 'splash.html', 'style.css', 'icon.png', 'icon.svg', 'preload.js', 'main.js', 'server.js', 'package.json', 'package-lock.json', 'mac-app.sh'
 # 上次传过去的内容摘要，记在系统临时目录（丢了也没关系，就是全部重传一次）
 $stamp = Join-Path $env:TEMP 'unified-deploy-mac.json'
 $old = @{}
